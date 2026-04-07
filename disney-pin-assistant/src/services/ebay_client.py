@@ -1,10 +1,11 @@
+import time
 import httpx
 from src.config import settings
 
-_token_cache: dict = {"access_token": None}
+_token_cache: dict = {"access_token": None, "expires_at": 0}
 
 async def get_ebay_token() -> str:
-    if _token_cache["access_token"]:
+    if _token_cache["access_token"] and time.time() < _token_cache["expires_at"]:
         return _token_cache["access_token"]
     async with httpx.AsyncClient() as client:
         response = await client.post(
@@ -16,6 +17,7 @@ async def get_ebay_token() -> str:
         response.raise_for_status()
         data = response.json()
         _token_cache["access_token"] = data["access_token"]
+        _token_cache["expires_at"] = time.time() + data.get("expires_in", 7200) - 300
         return data["access_token"]
 
 async def browse_api_search(query: str, filters: str | None = None, limit: int = 50) -> list[dict]:

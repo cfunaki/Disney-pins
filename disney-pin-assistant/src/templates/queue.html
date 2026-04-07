@@ -36,7 +36,7 @@ async function loadPins() {
         let confClass = "confidence-low";
         if (confidence >= 0.8) confClass = "confidence-high";
         else if (confidence >= 0.5) confClass = "confidence-medium";
-        const imgSrc = pin.image_paths.length > 0 ? `/uploads/${pin.image_paths[0].split("/").pop()}` : "";
+        const imgSrc = pin.image_paths.length > 0 ? `/uploads/${pin.image_paths[0].replace(/^.*uploads\//, "")}` : "";
         const row = document.createElement("tr");
         row.dataset.status = pin.status;
         row.innerHTML = `

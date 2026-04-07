@@ -5,7 +5,7 @@ from src.config import settings
 
 client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
 
-async def send_vision_request(image_paths: list[str], prompt: str) -> dict:
+async def send_vision_request(image_paths: list[str], prompt: str) -> str:
     content = []
     for path in image_paths:
         image_data = Path(path).read_bytes()

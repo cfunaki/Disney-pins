@@ -9,6 +9,17 @@ from src.pipeline.comps import search_comps, filter_comps
 from src.pipeline.listing import generate_listing_draft, compute_pricing
 
 async def process_single_pin(session_factory: async_sessionmaker, pin_id: int) -> None:
+    try:
+        await _process_single_pin_inner(session_factory, pin_id)
+    except Exception:
+        async with session_factory() as db:
+            pin = await db.get(Pin, pin_id)
+            if pin:
+                pin.status = PinStatus.ERROR
+                pin.seller_notes = (pin.seller_notes or "") + " [PROCESSING ERROR]"
+                await db.commit()
+
+async def _process_single_pin_inner(session_factory: async_sessionmaker, pin_id: int) -> None:
     async with session_factory() as db:
         pin = await db.get(Pin, pin_id)
         if not pin or pin.status != PinStatus.UNPROCESSED:

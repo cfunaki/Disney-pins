@@ -78,7 +78,9 @@ async def update_pin(pin_id: int, update: PinUpdateRequest, db: AsyncSession = D
 def _pin_to_dict(pin: Pin) -> dict:
     data = {"id": pin.id, "batch_id": pin.batch_id, "status": pin.status.value, "photo_type": pin.photo_type, "seller_notes": pin.seller_notes, "image_paths": pin.image_paths, "extraction": None, "catalog_matches": [], "comps": [], "listing_draft": None}
     if pin.extraction:
-        data["extraction"] = {"characters": pin.extraction.characters, "franchise": pin.extraction.franchise, "pin_type": pin.extraction.pin_type, "confidence_score": pin.extraction.confidence_score, "suggested_search_terms": pin.extraction.suggested_search_terms}
+        data["extraction"] = {"characters": pin.extraction.characters, "franchise": pin.extraction.franchise, "pin_type": pin.extraction.pin_type, "confidence_score": pin.extraction.confidence_score, "suggested_search_terms": pin.extraction.suggested_search_terms, "text_on_pin": pin.extraction.text_on_pin, "visible_dates": pin.extraction.visible_dates, "event_clues": pin.extraction.event_clues, "edition_size": pin.extraction.edition_size, "condition_observations": pin.extraction.condition_observations, "collection_or_series": pin.extraction.collection_or_series}
+    for match in pin.catalog_matches:
+        data["catalog_matches"].append({"catalog_entry_id": match.catalog_entry_id, "match_confidence": match.match_confidence, "match_reasoning": match.match_reasoning, "rank": match.rank, "status": match.status.value})
     if pin.listing_draft:
         data["listing_draft"] = {"title": pin.listing_draft.title, "description": pin.listing_draft.description, "suggested_price": pin.listing_draft.suggested_price, "quick_sale_price": pin.listing_draft.quick_sale_price, "price_confidence": pin.listing_draft.price_confidence, "tags_keywords": pin.listing_draft.tags_keywords, "export_status": pin.listing_draft.export_status.value}
     for comp in pin.comps:

@@ -12,7 +12,7 @@ async function loadDetail() {
     const container = document.getElementById("detail-content");
     const draft = pin.listing_draft;
     const extraction = pin.extraction;
-    const imgSrc = pin.image_paths.length > 0 ? `/uploads/${pin.image_paths[0].split("/").pop()}` : "";
+    const imgSrc = pin.image_paths.length > 0 ? `/uploads/${pin.image_paths[0].replace(/^.*uploads\//, "")}` : "";
     let compsHtml = "<h3>Comps</h3><ul class='comp-list'>";
     for (const comp of pin.comps) {
         const cls = comp.excluded ? "comp-excluded" : "";

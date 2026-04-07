@@ -29,6 +29,7 @@ class PinStatus(str, enum.Enum):
     PRICED = "priced"
     APPROVED = "approved"
     EXPORTED = "exported"
+    ERROR = "error"
 
 
 class MatchStatus(str, enum.Enum):

@@ -20,7 +20,8 @@ async def upload_photos(
 
     pins = []
     for file in files:
-        file_path = upload_dir / file.filename
+        safe_name = Path(file.filename).name  # strip path traversal
+        file_path = upload_dir / safe_name
         content = await file.read()
         file_path.write_bytes(content)
         pin = Pin(
