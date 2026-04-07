@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block content %}
+<div id="pin-detail">
+    <a href="/queue/{{ batch_id }}">← Back to Queue</a>
+    <h2>Pin #{{ pin_id }}</h2>
+    <div class="detail-container" id="detail-content">Loading...</div>
+</div>
+<script>
+async function loadDetail() {
+    const response = await fetch(`/api/pins/{{ pin_id }}`);
+    const pin = await response.json();
+    const container = document.getElementById("detail-content");
+    const draft = pin.listing_draft;
+    const extraction = pin.extraction;
+    const imgSrc = pin.image_paths.length > 0 ? `/uploads/${pin.image_paths[0].replace(/^.*uploads\//, "")}` : "";
+    let compsHtml = "<h3>Comps</h3><ul class='comp-list'>";
+    for (const comp of pin.comps) {
+        const cls = comp.excluded ? "comp-excluded" : "";
+        compsHtml += `<li class="${cls}"><span>${comp.title}</span><span>$${comp.price.toFixed(2)} (${comp.listing_type})</span></li>`;
+    }
+    compsHtml += "</ul>";
+    let extractionHtml = "";
+    if (extraction) {
+        extractionHtml = `<h3>Vision Extraction</h3>
+            <p><strong>Characters:</strong> ${(extraction.characters || []).join(", ")}</p>
+            <p><strong>Franchise:</strong> ${extraction.franchise || "—"}</p>
+            <p><strong>Pin Type:</strong> ${extraction.pin_type || "—"}</p>
+            <p><strong>Confidence:</strong> ${(extraction.confidence_score * 100).toFixed(0)}%</p>`;
+    }
+    container.innerHTML = `
+        <div class="detail-image">
+            <img src="${imgSrc}" alt="pin photo" onerror="this.alt='No image'">
+            ${extractionHtml}
+            ${compsHtml}
+        </div>
+        <div class="detail-form">
+            <h3>Listing Draft</h3>
+            <label>Title</label>
+            <input type="text" id="edit-title" value="${draft ? draft.title : ""}" maxlength="80">
+            <label>Description</label>
+            <textarea id="edit-description">${draft ? draft.description : ""}</textarea>
+            <label>Price</label>
+            <input type="number" id="edit-price" value="${draft ? draft.suggested_price : ""}" step="0.01">
+            <p style="margin-top:0.5rem;color:#666">
+                Quick sale: $${draft ? draft.quick_sale_price : "—"} |
+                Confidence: ${draft ? draft.price_confidence : "—"}
+            </p>
+            <label>Tags</label>
+            <input type="text" id="edit-tags" value="${draft ? draft.tags_keywords.join(", ") : ""}">
+            <div style="margin-top:1.5rem;display:flex;gap:1rem;">
+                <button class="btn-approve" onclick="saveAndApprove(${pin.id})">Save & Approve</button>
+                <button class="btn-edit" onclick="savePin(${pin.id})">Save Draft</button>
+                <button class="btn-skip" onclick="skipPin(${pin.id})">Skip</button>
+            </div>
+        </div>`;
+}
+async function saveAndApprove(pinId) {
+    await savePin(pinId);
+    await fetch(`/api/pins/${pinId}/approve`, { method: "POST" });
+    window.location.href = document.querySelector("a").href;
+}
+loadDetail();
+</script>
+{% endblock %}
