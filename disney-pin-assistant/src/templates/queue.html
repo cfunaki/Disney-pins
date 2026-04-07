@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Review Queue — Batch {{ batch_id }}</h2>
+<div class="batch-actions">
+    <button class="btn-approve" onclick="approveAllHighConfidence('{{ batch_id }}')">Approve All High Confidence</button>
+    <a href="/api/batch/{{ batch_id }}/export" class="btn-export">Export Approved as CSV</a>
+</div>
+<div class="filter-bar">
+    <label>Filter by status:</label>
+    <select id="status-filter" onchange="filterTable()">
+        <option value="">All</option>
+        <option value="extracted">Extracted</option>
+        <option value="matched">Matched</option>
+        <option value="priced">Priced</option>
+        <option value="approved">Approved</option>
+    </select>
+</div>
+<table class="queue-table">
+    <thead>
+        <tr><th>Image</th><th>Title</th><th>Confidence</th><th>Price</th><th>Status</th><th>Actions</th></tr>
+    </thead>
+    <tbody id="pins-table-body"></tbody>
+</table>
+<script>
+async function loadPins() {
+    const response = await fetch(`/api/batch/{{ batch_id }}/pins`);
+    const pins = await response.json();
+    const tbody = document.getElementById("pins-table-body");
+    tbody.innerHTML = "";
+    for (const pin of pins) {
+        const draft = pin.listing_draft;
+        const extraction = pin.extraction;
+        const title = draft ? draft.title : "(not yet processed)";
+        const confidence = extraction ? extraction.confidence_score : 0;
+        const price = draft ? `$${draft.suggested_price || "—"}` : "—";
+        let confClass = "confidence-low";
+        if (confidence >= 0.8) confClass = "confidence-high";
+        else if (confidence >= 0.5) confClass = "confidence-medium";
+        const imgSrc = pin.image_paths.length > 0 ? `/uploads/${pin.image_paths[0].replace(/^.*uploads\//, "")}` : "";
+        const row = document.createElement("tr");
+        row.dataset.status = pin.status;
+        row.innerHTML = `
+            <td><img src="${imgSrc}" alt="pin" onerror="this.style.display='none'"></td>
+            <td><a href="/pins/${pin.id}">${title}</a></td>
+            <td class="${confClass}">${(confidence * 100).toFixed(0)}%</td>
+            <td>${price}</td>
+            <td><span class="status-badge status-${pin.status}">${pin.status}</span></td>
+            <td class="actions">
+                ${pin.status !== "approved" && pin.status !== "exported" ? `
+                    <button class="btn-approve" onclick="approvePin(${pin.id})">Approve</button>
+                    <button class="btn-skip" onclick="skipPin(${pin.id})">Skip</button>
+                ` : ""}
+                <a href="/pins/${pin.id}" class="btn-edit">Detail</a>
+            </td>`;
+        tbody.appendChild(row);
+    }
+}
+function filterTable() {
+    const filter = document.getElementById("status-filter").value;
+    const rows = document.querySelectorAll("#pins-table-body tr");
+    for (const row of rows) { row.style.display = (!filter || row.dataset.status === filter) ? "" : "none"; }
+}
+loadPins();
+</script>
+{% endblock %}

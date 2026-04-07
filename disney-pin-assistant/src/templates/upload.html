@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="upload-container">
+    <h2>Upload Pin Photos</h2>
+    <form id="upload-form" enctype="multipart/form-data">
+        <div class="drop-zone" id="drop-zone">
+            <p>Drag & drop photos here, or click to select</p>
+            <input type="file" id="file-input" name="files" multiple accept="image/*" hidden>
+        </div>
+        <div id="file-list"></div>
+        <div class="form-group">
+            <label for="photo-type">Photo type:</label>
+            <select id="photo-type" name="photo_type">
+                <option value="">Unknown</option>
+                <option value="front">Front</option>
+                <option value="backstamp">Backstamp</option>
+                <option value="group">Group (multiple pins)</option>
+            </select>
+        </div>
+        <button type="submit" id="upload-btn" disabled>Upload & Process</button>
+    </form>
+    <div id="progress-container" hidden>
+        <h3>Processing batch: <span id="batch-id"></span></h3>
+        <div class="progress-bar">
+            <div class="progress-fill" id="progress-fill"></div>
+        </div>
+        <p><span id="processed-count">0</span> / <span id="total-count">0</span> pins processed</p>
+        <a id="review-link" href="#" hidden>Go to Review Queue &rarr;</a>
+    </div>
+</div>
+{% endblock %}
