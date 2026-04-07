@@ -3,7 +3,12 @@ __pycache__/
 .env
 *.db
 uploads/
-sample_data/
 .venv/
 dist/
 *.egg-info/
+
+# Evaluation artifacts (scorecard is regenerated)
+evaluation/scorecard.md
+
+# Sample data for manual testing
+sample_data/
