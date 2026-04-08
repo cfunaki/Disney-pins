@@ -15,6 +15,7 @@ dependencies = [
     "jinja2>=3.1.0",
     "aiosqlite>=0.20.0",
     "greenlet>=3.0.0",
+    "beautifulsoup4>=4.12",
 ]
 
 [project.optional-dependencies]
