@@ -57,19 +57,23 @@ async def _process_single_pin_inner(session_factory: async_sessionmaker, pin_id:
         search_terms = extraction_data.get("suggested_search_terms", [])
         if matches:
             search_terms = [matches[0]["canonical_name"]] + search_terms
-        sold_comps = await search_comps(search_terms[:1], listing_type="sold")
-        active_comps = await search_comps(search_terms[:1], listing_type="active")
-        all_comps = filter_comps(sold_comps + active_comps)
-        for comp_data in all_comps:
-            comp = Comp(
-                pin_id=pin.id, ebay_listing_id=comp_data.get("ebay_listing_id"),
-                title=comp_data["title"], price=comp_data["price"],
-                sale_date=comp_data.get("sale_date"), listing_type=ListingType(comp_data["listing_type"]),
-                condition=comp_data.get("condition"), match_type=MatchType.EXACT if matches else MatchType.NEAR,
-                excluded=comp_data.get("excluded", False), exclusion_reason=comp_data.get("exclusion_reason"),
-                raw_data=comp_data.get("raw_data"),
-            )
-            db.add(comp)
+
+        all_comps = []
+        if settings.ebay_client_id and settings.ebay_client_secret:
+            sold_comps = await search_comps(search_terms[:1], listing_type="sold")
+            active_comps = await search_comps(search_terms[:1], listing_type="active")
+            all_comps = filter_comps(sold_comps + active_comps)
+            for comp_data in all_comps:
+                comp = Comp(
+                    pin_id=pin.id, ebay_listing_id=comp_data.get("ebay_listing_id"),
+                    title=comp_data["title"], price=comp_data["price"],
+                    sale_date=comp_data.get("sale_date"), listing_type=ListingType(comp_data["listing_type"]),
+                    condition=comp_data.get("condition"), match_type=MatchType.EXACT if matches else MatchType.NEAR,
+                    excluded=comp_data.get("excluded", False), exclusion_reason=comp_data.get("exclusion_reason"),
+                    raw_data=comp_data.get("raw_data"),
+                )
+                db.add(comp)
+
         pin.status = PinStatus.PRICED
         await db.commit()
 
