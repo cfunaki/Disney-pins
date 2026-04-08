@@ -34,3 +34,34 @@ async def browse_api_search(query: str, filters: str | None = None, limit: int =
         response.raise_for_status()
         data = response.json()
         return data.get("itemSummaries", [])
+
+
+async def browse_api_seller_search(seller: str, limit: int = 50) -> list[dict]:
+    """Search active listings by seller username."""
+    token = await get_ebay_token()
+    params = {
+        "q": "disney pin",
+        "filter": f"sellers:{{{seller}}}",
+        "limit": str(limit),
+    }
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            "https://api.ebay.com/buy/browse/v1/item_summary/search",
+            headers={"Authorization": f"Bearer {token}", "X-EBAY-C-MARKETPLACE-ID": "EBAY_US"},
+            params=params,
+        )
+        response.raise_for_status()
+        data = response.json()
+        return data.get("itemSummaries", [])
+
+
+async def browse_api_item_detail(item_id: str) -> dict:
+    """Get full item details including localizedAspects."""
+    token = await get_ebay_token()
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            f"https://api.ebay.com/buy/browse/v1/item/{item_id}",
+            headers={"Authorization": f"Bearer {token}", "X-EBAY-C-MARKETPLACE-ID": "EBAY_US"},
+        )
+        response.raise_for_status()
+        return response.json()
