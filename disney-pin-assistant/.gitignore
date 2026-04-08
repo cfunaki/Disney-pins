@@ -4,6 +4,7 @@ __pycache__/
 *.db
 uploads/
 sample_data/
+scripts/ebay_import/output/
 .venv/
 dist/
 *.egg-info/
