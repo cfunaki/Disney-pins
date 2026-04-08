@@ -33,14 +33,9 @@ def load_existing_ids(ground_truth_path: Path) -> set[str]:
     data = json.loads(ground_truth_path.read_text())
     ids = set()
     for pin in data.get("pins", []):
-        image_file = pin.get("image_file", "")
-        if image_file.startswith("v1-"):
-            # Extract item ID from filename: v1-123456789-0.jpg -> v1|123456789|0
-            parts = image_file.replace(".jpg", "").split("-")
-            if len(parts) >= 3:
-                ids.add(f"{parts[0]}|{parts[1]}|{parts[2]}")
-        elif pin.get("source_reference_id"):
-            ids.add(pin["source_reference_id"])
+        ref_id = pin.get("source_reference_id")
+        if ref_id:
+            ids.add(ref_id)
     return ids
 
 
@@ -94,7 +89,7 @@ def build_ground_truth_entry(parsed: dict, image_filename: str) -> dict:
         "expected_franchise": parsed["franchise"],
         "expected_pin_type": parsed["pin_type"],
         "expected_edition_size": parsed["edition_size"],
-        "expected_event": None,
+        "expected_event": parsed.get("event"),
         "notes": parsed["status"],
         "source_reference_id": parsed["source_reference_id"],
     }
@@ -144,11 +139,22 @@ async def run(seller: str, max_items: int, sold_only: bool, rate: float) -> None
     sold_items = await fetch_sold_listings(seller, app_id, max_items=max_items, rate_limiter=limiter)
     print(f"[sold] Retrieved {len(sold_items)} sold listings")
 
+    # Enrich sold items with Browse API item detail for structured fields
+    print(f"[sold] Enriching sold listings with item details...")
     for item in sold_items:
         item_id = item.get("itemId", "")
         if item_id in existing_ids:
             continue
-        parsed = parse_listing(item, status="sold")
+        # Try to get full item details (localizedAspects) via Browse API
+        await limiter.acquire()
+        try:
+            detail = await browse_api_item_detail(item_id)
+            # Merge: keep sold price from Finding API, add detail fields
+            detail["price"] = item.get("price", detail.get("price", {}))
+            parsed = parse_listing(detail, status="sold")
+        except Exception:
+            # Fall back to Finding API data (sparse but usable)
+            parsed = parse_listing(item, status="sold")
         all_parsed.append(parsed)
 
     # Fetch active listings via Browse API (unless --sold-only)

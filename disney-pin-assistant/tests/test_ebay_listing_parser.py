@@ -30,7 +30,23 @@ def test_parse_listing_with_full_item_specifics():
     assert result["release_year"] == 2024
     assert result["price"] == 25.99
     assert result["image_url"] == "https://i.ebayimg.com/images/g/abc/s-l1600.jpg"
+    assert result["event"] is None
     assert result["status"] == "sold"
+
+
+def test_parse_listing_extracts_event():
+    """Extract event from item specifics."""
+    listing = {
+        "itemId": "v1|444|0",
+        "title": "D23 Expo Pin",
+        "price": {"value": "30.00", "currency": "USD"},
+        "image": {"imageUrl": "https://example.com/img.jpg"},
+        "localizedAspects": [
+            {"name": "Event", "value": "D23 Expo 2024"},
+        ],
+    }
+    result = parse_listing(listing, status="sold")
+    assert result["event"] == "D23 Expo 2024"
 
 
 def test_parse_listing_multiple_characters():
@@ -74,6 +90,7 @@ def test_parse_listing_no_item_specifics():
     assert result["franchise"] is None
     assert result["edition_size"] is None
     assert result["pin_type"] is None
+    assert result["event"] is None
 
 
 def test_parse_listing_infers_franchise_from_character():

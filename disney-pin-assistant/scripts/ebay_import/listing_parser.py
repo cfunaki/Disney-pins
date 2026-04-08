@@ -1,6 +1,5 @@
 """Extract structured fields from eBay listing data."""
 
-import re
 from html.parser import HTMLParser
 
 from scripts.scraper.normalizer import (
@@ -123,6 +122,8 @@ def parse_listing(listing: dict, status: str) -> dict:
     if raw_desc:
         description = strip_html(raw_desc)
 
+    event = _get_aspect(aspects, "Event")
+
     return {
         "source_reference_id": listing.get("itemId", ""),
         "canonical_name": title,
@@ -131,6 +132,7 @@ def parse_listing(listing: dict, status: str) -> dict:
         "pin_type": _parse_pin_type(aspects),
         "edition_size": _parse_edition_size(aspects, title),
         "release_year": _parse_release_year(aspects),
+        "event": event,
         "price": price,
         "image_url": image_url,
         "description": description,
