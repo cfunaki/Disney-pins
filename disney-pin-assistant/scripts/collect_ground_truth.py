@@ -18,11 +18,11 @@ IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 
 
 def load_ground_truth() -> dict:
-    """Load existing ground truth data, or return empty dict."""
+    """Load existing ground truth data, or return empty structure."""
     if GROUND_TRUTH_FILE.exists():
         with open(GROUND_TRUTH_FILE, "r") as f:
             return json.load(f)
-    return {}
+    return {"pins": []}
 
 
 def save_ground_truth(data: dict) -> None:
@@ -117,14 +117,14 @@ def collect_for_image(image_name: str) -> dict:
 
     return {
         "image_file": image_name,
-        "listing_title": title,
-        "listing_description": description,
-        "listing_price": price,
-        "characters": characters,
-        "franchise": franchise,
-        "pin_type": pin_type,
-        "edition_size": edition_size,
-        "event": event,
+        "reference_title": title,
+        "reference_description": description,
+        "reference_price": price,
+        "expected_characters": characters,
+        "expected_franchise": franchise,
+        "expected_pin_type": pin_type,
+        "expected_edition_size": edition_size,
+        "expected_event": event,
         "notes": notes,
     }
 
@@ -140,15 +140,15 @@ def get_image_files() -> list[Path]:
 def main() -> None:
     if not SAMPLE_DATA_DIR.exists():
         print("Create a sample_data/ directory with pin photos first.")
-        sys.exit(0)
+        sys.exit(1)
 
     image_files = get_image_files()
     if not image_files:
         print("No image files found in sample_data/. Add .jpg, .jpeg, .png, or .webp files.")
-        sys.exit(0)
+        sys.exit(1)
 
     ground_truth = load_ground_truth()
-    already_recorded = set(ground_truth.keys())
+    already_recorded = {p["image_file"] for p in ground_truth["pins"]}
     new_images = [img for img in image_files if img.name not in already_recorded]
 
     if not new_images:
@@ -162,13 +162,13 @@ def main() -> None:
     try:
         for image_path in new_images:
             entry = collect_for_image(image_path.name)
-            ground_truth[image_path.name] = entry
+            ground_truth["pins"].append(entry)
 
     except KeyboardInterrupt:
         print("\n\nInterrupted — saving progress...")
 
     save_ground_truth(ground_truth)
-    recorded_count = len(ground_truth)
+    recorded_count = len(ground_truth["pins"])
     print(f"Total records saved: {recorded_count}")
 
 

@@ -240,6 +240,14 @@ def evaluate_pricing(draft, ground_truth: dict) -> dict:
             "reason": "no suggested price (no draft or price not set)",
         }
 
+    if reference_price == 0:
+        return {
+            "within_threshold": None,
+            "delta_pct": None,
+            "suggested_price": suggested_price,
+            "reference_price": reference_price,
+            "reason": "reference price is zero",
+        }
     delta_pct = abs(suggested_price - reference_price) / reference_price * 100
     within_threshold = delta_pct <= 25.0
 
