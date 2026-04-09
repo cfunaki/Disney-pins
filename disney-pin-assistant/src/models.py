@@ -123,6 +123,8 @@ class CatalogEntry(Base):
     source = Column(String(100), nullable=True)
     source_reference_id = Column(String(100), nullable=True)
     reference_image_url = Column(String(500), nullable=True)
+    image_path = Column(String(500), nullable=True)        # Local path to downloaded image
+    clip_embedding = Column(Text, nullable=True)           # JSON-serialized float list (512 dims)
     evidence_strength = Column(String(20), default="low")
     created_at = Column(String, default=lambda: _utcnow().isoformat())
     updated_at = Column(String, default=lambda: _utcnow().isoformat(), onupdate=lambda: _utcnow().isoformat())
