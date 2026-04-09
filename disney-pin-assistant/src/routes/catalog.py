@@ -1,11 +1,25 @@
 import csv
 import io
 import json
+import os
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.database import get_db
 from src.models import CatalogEntry
+from src.pipeline.image_matching import compute_clip_embedding
+
+
+def generate_embedding_for_entry(image_path: str) -> list[float] | None:
+    """Generate a CLIP embedding for a catalog entry's image."""
+    if not image_path or not os.path.exists(image_path):
+        return None
+    try:
+        return compute_clip_embedding(image_path)
+    except Exception as exc:
+        print(f"[catalog] Failed to generate embedding for {image_path}: {exc}")
+        return None
+
 
 router = APIRouter(prefix="/api/catalog")
 
@@ -78,9 +92,16 @@ async def import_catalog_json(file: UploadFile = File(...), db: AsyncSession = D
             source=source,
             source_reference_id=ref_id,
             reference_image_url=item.get("reference_image_url"),
+            image_path=item.get("image_path"),
             evidence_strength=item.get("evidence_strength", "medium"),
         )
         db.add(entry)
+        # Generate CLIP embedding if image is available
+        image_path = item.get("image_path")
+        if image_path:
+            embedding = generate_embedding_for_entry(image_path)
+            if embedding:
+                entry.clip_embedding = json.dumps(embedding)
         count += 1
         if ref_id is not None:
             existing_pairs.add((source, ref_id))
