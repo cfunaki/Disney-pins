@@ -83,6 +83,63 @@ def _compute_match_score(entry: CatalogEntry, extraction: dict) -> float:
         return 0.0
     return round(normalized, 2)
 
+async def find_catalog_matches_hybrid(
+    db: AsyncSession,
+    extraction: dict,
+    query_embedding: list[float] | None = None,
+    max_text_candidates: int = 30,
+    max_results: int = 5,
+) -> list[dict]:
+    """Hybrid matching: text scoring → CLIP visual re-ranking."""
+    from src.pipeline.image_matching import rank_by_visual_similarity
+
+    # Step 1: Text-based scoring (reuse existing logic)
+    result = await db.execute(select(CatalogEntry))
+    all_entries = result.scalars().all()
+
+    scored = []
+    for entry in all_entries:
+        score = _compute_match_score(entry, extraction)
+        if score > 0:
+            scored.append({
+                "catalog_entry_id": entry.id,
+                "canonical_name": entry.canonical_name,
+                "characters": entry.characters,
+                "franchise": entry.franchise,
+                "event": entry.event,
+                "edition_size": entry.edition_size,
+                "release_year": entry.release_year,
+                "pin_type": entry.pin_type,
+                "evidence_strength": entry.evidence_strength,
+                "source_reference_id": entry.source_reference_id,
+                "image_path": entry.image_path,
+                "clip_embedding": entry.clip_embedding,
+                "confidence": score,
+                "reasoning": _build_reasoning(entry, extraction),
+            })
+
+    scored.sort(key=lambda x: x["confidence"], reverse=True)
+    text_candidates = scored[:max_text_candidates]
+
+    # Step 2: Visual re-ranking (if embedding available)
+    if query_embedding is not None and text_candidates:
+        candidates_with_embeddings = [
+            c for c in text_candidates if c.get("clip_embedding") is not None
+        ]
+        if candidates_with_embeddings:
+            reranked = rank_by_visual_similarity(
+                query_embedding, candidates_with_embeddings, top_k=max_results
+            )
+            without_embeddings = [
+                c for c in text_candidates if c.get("clip_embedding") is None
+            ]
+            result_list = reranked + without_embeddings
+            return result_list[:max_results]
+
+    # Fallback: text-only
+    return text_candidates[:max_results]
+
+
 def _build_reasoning(entry: CatalogEntry, extraction: dict) -> str:
     reasons = []
     extracted_chars = {c.lower() for c in (extraction.get("characters") or [])}
