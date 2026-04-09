@@ -1,6 +1,8 @@
+import json
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.models import CatalogEntry
+from src.services.anthropic_client import send_vision_request
 
 async def find_catalog_matches(db: AsyncSession, extraction: dict, max_results: int = 3) -> list[dict]:
     result = await db.execute(select(CatalogEntry))
@@ -159,3 +161,69 @@ def _build_reasoning(entry: CatalogEntry, extraction: dict) -> str:
         if extraction["pin_type"].lower() == entry.pin_type.lower():
             reasons.append(f"Pin type match: {entry.pin_type}")
     return "; ".join(reasons) if reasons else "Weak match"
+
+
+VISION_CONFIRM_PROMPT = """You are comparing a user's Disney pin photo against catalog reference images to find an exact match.
+
+The FIRST image is the user's photo of a pin they want to identify.
+The remaining images are catalog reference images of candidate pins.
+
+For each candidate, I'll tell you its catalog_entry_id and name.
+
+Candidates:
+{candidates_text}
+
+Compare the user's pin photo against each candidate image. Look at:
+- The exact character pose and expression
+- Background design, colors, and patterns
+- Pin shape and border style
+- Any text, numbers, or logos on the pin
+- Edition markings or backstamp details
+
+Return ONLY valid JSON:
+{{"best_match_catalog_entry_id": <id or null if none match>, "confidence": "high" | "medium" | "low", "reasoning": "brief explanation"}}
+
+If NONE of the candidates match the user's pin, return null for best_match_catalog_entry_id."""
+
+
+async def confirm_match_with_vision(
+    user_image_path: str,
+    candidates: list[dict],
+) -> dict | None:
+    """Use Claude Vision to confirm which catalog pin matches the user's photo."""
+    candidates_text = "\n".join(
+        f"- catalog_entry_id={c['catalog_entry_id']}: {c['canonical_name']}"
+        for c in candidates
+    )
+    prompt = VISION_CONFIRM_PROMPT.format(candidates_text=candidates_text)
+
+    image_paths = [user_image_path]
+    for c in candidates:
+        if c.get("image_path"):
+            image_paths.append(c["image_path"])
+
+    try:
+        raw_response = await send_vision_request(image_paths, prompt)
+        text = raw_response.strip()
+        if text.startswith("```"):
+            text = text.split("\n", 1)[1]
+            if text.endswith("```"):
+                text = text[:-3]
+        result = json.loads(text.strip())
+
+        best_id = result.get("best_match_catalog_entry_id")
+        if best_id is None:
+            return None
+
+        for candidate in candidates:
+            if candidate["catalog_entry_id"] == best_id:
+                confirmed = dict(candidate)
+                confirmed["vision_confirmed"] = True
+                confirmed["vision_reasoning"] = result.get("reasoning", "")
+                return confirmed
+
+        return None
+
+    except Exception as exc:
+        print(f"[matching] Vision confirmation failed: {exc}")
+        return None
