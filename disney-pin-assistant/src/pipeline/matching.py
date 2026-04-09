@@ -92,11 +92,28 @@ async def find_catalog_matches_hybrid(
     max_text_candidates: int = 30,
     max_results: int = 5,
 ) -> list[dict]:
-    """Hybrid matching: text scoring → CLIP visual re-ranking."""
+    """Hybrid matching: text scoring → CLIP visual re-ranking.
+
+    Uses SQL pre-filtering to avoid loading the entire catalog into memory.
+    Falls back to full scan only when no filterable attributes are available.
+    """
+    from sqlalchemy import or_
     from src.pipeline.image_matching import rank_by_visual_similarity
 
-    # Step 1: Text-based scoring (reuse existing logic)
-    result = await db.execute(select(CatalogEntry))
+    # Step 1: SQL pre-filter to reduce rows loaded into memory
+    query = select(CatalogEntry)
+    filters = []
+    if extraction.get("franchise"):
+        filters.append(CatalogEntry.franchise.ilike(extraction["franchise"]))
+    if extraction.get("pin_type"):
+        filters.append(CatalogEntry.pin_type.ilike(extraction["pin_type"]))
+    if extraction.get("edition_size"):
+        filters.append(CatalogEntry.edition_size == extraction["edition_size"])
+    if filters:
+        # Use OR so we get a broad set, then score precisely in Python
+        query = query.where(or_(*filters))
+
+    result = await db.execute(query)
     all_entries = result.scalars().all()
 
     scored = []
