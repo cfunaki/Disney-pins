@@ -29,7 +29,12 @@ def compute_clip_embedding(image_path: str) -> list[float]:
     inputs = processor(images=image, return_tensors="pt")
     with torch.no_grad():
         image_features = model.get_image_features(**inputs)
-    embedding = image_features[0].numpy()
+    # Handle both tensor and BaseModelOutputWithPooling return types
+    if hasattr(image_features, 'pooler_output'):
+        features_tensor = image_features.pooler_output
+    else:
+        features_tensor = image_features
+    embedding = features_tensor.squeeze(0).numpy()
     norm = np.linalg.norm(embedding)
     if norm > 0:
         embedding = embedding / norm
