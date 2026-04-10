@@ -4,7 +4,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from src.config import settings
 from src.models import (Pin, PinStatus, VisionExtraction, CatalogMatch, MatchStatus, Comp, ListingType, MatchType, ListingDraft, ExportStatus)
 from src.pipeline.vision import extract_pin_metadata
-from src.pipeline.matching import find_catalog_matches
+from src.pipeline.matching import find_catalog_matches_hybrid
+from src.pipeline.image_matching import compute_clip_embedding
 from src.pipeline.comps import search_comps, filter_comps
 from src.pipeline.listing import generate_listing_draft, compute_pricing
 
@@ -40,11 +41,25 @@ async def _process_single_pin_inner(session_factory: async_sessionmaker, pin_id:
 
     async with session_factory() as db:
         pin = await db.get(Pin, pin_id)
-        matches = await find_catalog_matches(db, extraction_data, max_results=3)
+
+        # Generate CLIP embedding from user's photo
+        query_embedding = None
+        try:
+            if pin.image_paths:
+                query_embedding = compute_clip_embedding(pin.image_paths[0])
+        except Exception as exc:
+            print(f"[orchestrator] CLIP embedding failed for pin {pin_id}: {exc}")
+
+        matches = await find_catalog_matches_hybrid(
+            db, extraction_data,
+            query_embedding=query_embedding,
+            max_results=3,
+        )
         for rank, match in enumerate(matches, 1):
             catalog_match = CatalogMatch(
                 pin_id=pin.id, catalog_entry_id=match["catalog_entry_id"],
-                match_confidence=match["confidence"], match_reasoning=match["reasoning"],
+                match_confidence=match.get("visual_similarity", match["confidence"]),
+                match_reasoning=match["reasoning"],
                 rank=rank, status=MatchStatus.SUGGESTED,
             )
             db.add(catalog_match)
@@ -57,19 +72,23 @@ async def _process_single_pin_inner(session_factory: async_sessionmaker, pin_id:
         search_terms = extraction_data.get("suggested_search_terms", [])
         if matches:
             search_terms = [matches[0]["canonical_name"]] + search_terms
-        sold_comps = await search_comps(search_terms[:1], listing_type="sold")
-        active_comps = await search_comps(search_terms[:1], listing_type="active")
-        all_comps = filter_comps(sold_comps + active_comps)
-        for comp_data in all_comps:
-            comp = Comp(
-                pin_id=pin.id, ebay_listing_id=comp_data.get("ebay_listing_id"),
-                title=comp_data["title"], price=comp_data["price"],
-                sale_date=comp_data.get("sale_date"), listing_type=ListingType(comp_data["listing_type"]),
-                condition=comp_data.get("condition"), match_type=MatchType.EXACT if matches else MatchType.NEAR,
-                excluded=comp_data.get("excluded", False), exclusion_reason=comp_data.get("exclusion_reason"),
-                raw_data=comp_data.get("raw_data"),
-            )
-            db.add(comp)
+
+        all_comps = []
+        if settings.ebay_client_id and settings.ebay_client_secret:
+            sold_comps = await search_comps(search_terms[:1], listing_type="sold")
+            active_comps = await search_comps(search_terms[:1], listing_type="active")
+            all_comps = filter_comps(sold_comps + active_comps)
+            for comp_data in all_comps:
+                comp = Comp(
+                    pin_id=pin.id, ebay_listing_id=comp_data.get("ebay_listing_id"),
+                    title=comp_data["title"], price=comp_data["price"],
+                    sale_date=comp_data.get("sale_date"), listing_type=ListingType(comp_data["listing_type"]),
+                    condition=comp_data.get("condition"), match_type=MatchType.EXACT if matches else MatchType.NEAR,
+                    excluded=comp_data.get("excluded", False), exclusion_reason=comp_data.get("exclusion_reason"),
+                    raw_data=comp_data.get("raw_data"),
+                )
+                db.add(comp)
+
         pin.status = PinStatus.PRICED
         await db.commit()
 
