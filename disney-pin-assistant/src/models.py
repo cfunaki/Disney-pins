@@ -75,10 +75,6 @@ class Pin(Base):
     image_paths = Column(JSON, default=list)
     no_catalog_match = Column(Boolean, default=False, server_default="0", nullable=False)
     created_at = Column(String, default=lambda: _utcnow().isoformat())
-
-    def __init__(self, **kwargs):
-        kwargs.setdefault("no_catalog_match", False)
-        super().__init__(**kwargs)
     updated_at = Column(String, default=lambda: _utcnow().isoformat(), onupdate=lambda: _utcnow().isoformat())
 
     # Relationships
