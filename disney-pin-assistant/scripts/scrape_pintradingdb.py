@@ -5,6 +5,7 @@ import asyncio
 import json
 import os
 import sys
+import time
 
 import httpx
 
@@ -48,18 +49,33 @@ def save_entries(output_path: str, entries: dict[str, dict]) -> None:
         json.dump(list(entries.values()), f, indent=2, ensure_ascii=False)
 
 
+def format_eta(seconds: float) -> str:
+    if seconds < 60:
+        return f"{seconds:.0f}s"
+    if seconds < 3600:
+        return f"{seconds / 60:.0f}m"
+    hours = seconds / 3600
+    return f"{hours:.1f}h"
+
+
 async def discover_pin_ids(
     start_page: int,
     end_page: int,
     limiter: RateLimiter,
     client: httpx.AsyncClient | None = None,
 ) -> list[str]:
-    """Paginate through list pages and collect all pin IDs."""
+    """Paginate through list pages and collect all pin IDs.
+
+    PinTradingDB returns page 1 = newest pins, page 574 = oldest.
+    So start_page=1 gives reverse chronological order (newest first).
+    """
     all_ids: list[str] = []
     seen: set[str] = set()
+    total_pages = end_page - start_page + 1
 
     for page_num in range(start_page, end_page + 1):
-        print(f"[discover] Fetching list page {page_num}/{end_page}...")
+        page_index = page_num - start_page + 1
+        print(f"[discover] Fetching list page {page_num} ({page_index}/{total_pages})...")
         html = await fetch_pin_list_page(page_num, limiter, client=client)
         if html is None:
             print(f"[discover] No response for page {page_num}, stopping discovery.")
@@ -74,7 +90,8 @@ async def discover_pin_ids(
         seen.update(new_ids)
         all_ids.extend(new_ids)
 
-        print(f"[discover] Page {page_num}: found {len(page_ids)} pins ({len(new_ids)} new), total so far: {len(all_ids)}")
+        if page_index % 10 == 0 or page_num == end_page:
+            print(f"[discover] Progress: {page_index}/{total_pages} pages, {len(all_ids)} pins found")
 
     return all_ids
 
@@ -88,7 +105,7 @@ async def scrape(args: argparse.Namespace) -> None:
     if args.resume:
         existing = load_existing(output_path)
         if existing:
-            print(f"[resume] Loaded {len(existing)} existing entries, skipping those IDs.")
+            print(f"[resume] Loaded {len(existing)} existing entries, will skip those IDs.")
 
     entries: dict[str, dict] = dict(existing)
 
@@ -104,22 +121,33 @@ async def scrape(args: argparse.Namespace) -> None:
             pin_ids = await discover_pin_ids(args.start_page, args.end_page, limiter, client=client)
             print(f"[scraper] Discovered {len(pin_ids)} pin IDs total.")
 
-        total = len(pin_ids)
-        fetched = 0
-        skipped = 0
+        # Filter out already-scraped IDs when resuming
+        if args.resume and existing:
+            to_scrape = [pid for pid in pin_ids if pid not in existing]
+            print(f"[resume] {len(pin_ids) - len(to_scrape)} already scraped, {len(to_scrape)} remaining.")
+        else:
+            to_scrape = pin_ids
+
+        total = len(to_scrape)
+        if total == 0:
+            print("[scraper] Nothing to scrape — all pins already collected.")
+            return
+
         burst_pause = args.burst_pause
+        # Estimate: ~2 requests/pin at args.rate RPS + burst pauses
+        secs_per_pin = 2 / args.rate
+        burst_overhead = burst_pause / args.burst_size if args.burst_size > 0 else 0
+        est_seconds = total * (secs_per_pin + burst_overhead)
+        print(f"[scraper] Processing {total} pins (est. {format_eta(est_seconds)} at {args.rate} RPS)...")
 
-        est_seconds = total * (2 / args.rate)  # ~2 requests per pin (detail + image)
-        est_minutes = est_seconds / 60
-        print(f"[scraper] Processing {total} pins (est. {est_minutes:.0f} min at {args.rate} RPS)...")
+        fetched = 0
+        errors = 0
+        start_time = time.monotonic()
 
-        for i, pin_id in enumerate(pin_ids, start=1):
-            if args.resume and pin_id in entries:
-                skipped += 1
-                continue
-
+        for i, pin_id in enumerate(to_scrape, start=1):
             html = await fetch_pin_detail(pin_id, limiter, client=client)
             if html is None:
+                errors += 1
                 fetched += 1
             else:
                 raw = parse_pin_detail(html, pin_id)
@@ -137,30 +165,35 @@ async def scrape(args: argparse.Namespace) -> None:
                 entries[pin_id] = normalized
                 fetched += 1
 
-            processed = fetched + skipped
-            if processed % 50 == 0 and processed > 0:
+            # Progress every 10 pins
+            if fetched % 10 == 0 and fetched > 0:
+                elapsed = time.monotonic() - start_time
+                rate = fetched / elapsed if elapsed > 0 else 0
+                remaining = (total - fetched) / rate if rate > 0 else 0
                 print(
-                    f"[progress] Processed {processed}/{total} "
-                    f"| Entries collected: {len(entries)}"
+                    f"[progress] {fetched}/{total} pins "
+                    f"({fetched * 100 // total}%) "
+                    f"| {len(entries)} collected "
+                    f"| {errors} errors "
+                    f"| ETA: {format_eta(remaining)}"
                 )
 
-            if fetched % 200 == 0 and fetched > 0:
+            # Checkpoint save every 100 pins
+            if fetched % 100 == 0 and fetched > 0:
                 save_entries(output_path, entries)
-                print(f"[checkpoint] Saved {len(entries)} entries to {output_path}")
+                print(f"[checkpoint] Saved {len(entries)} entries")
 
-            # Burst pause: rest every N pins to stay under rate limit windows
+            # Burst pause
             if burst_pause > 0 and fetched > 0 and fetched % args.burst_size == 0:
-                print(f"[pause] Cooling down {burst_pause}s after {fetched} pins...")
+                print(f"[pause] Cooling down {burst_pause:.0f}s...")
                 await asyncio.sleep(burst_pause)
 
     # Final save
     save_entries(output_path, entries)
-    print(f"\n[done] Total entries collected: {len(entries)}")
-    print(f"[done] Output saved to: {output_path}")
-    print(
-        f"\nTo import into the catalog, run:\n"
-        f"  python scripts/import_catalog.py --input {output_path}"
-    )
+    elapsed = time.monotonic() - start_time
+    print(f"\n[done] Scraped {fetched} pins in {format_eta(elapsed)}")
+    print(f"[done] Total entries: {len(entries)} ({errors} errors)")
+    print(f"[done] Output: {output_path}")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -174,14 +207,14 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=1,
         metavar="PAGE",
-        help="First list page to scrape (default: 1).",
+        help="First list page to scrape (default: 1 = newest pins).",
     )
     parser.add_argument(
         "--end-page",
         type=int,
-        default=100,
+        default=574,
         metavar="PAGE",
-        help="Last list page to scrape (default: 100).",
+        help="Last list page to scrape (default: 574 = all pages).",
     )
     parser.add_argument(
         "--pin-ids",
