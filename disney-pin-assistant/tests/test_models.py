@@ -1,19 +1,6 @@
 import pytest
 from sqlalchemy import select
 
-from src.models import Pin, PinStatus
-
-
-def test_pin_no_catalog_match_defaults_false():
-    pin = Pin(batch_id="b", status=PinStatus.UNPROCESSED, image_paths=[])
-    assert pin.no_catalog_match is False
-
-
-def test_pin_no_catalog_match_can_be_set_true():
-    pin = Pin(batch_id="b", status=PinStatus.UNPROCESSED, image_paths=[], no_catalog_match=True)
-    assert pin.no_catalog_match is True
-
-
 from src.models import (
     Pin,
     PinStatus,
@@ -27,6 +14,29 @@ from src.models import (
     ListingDraft,
     ExportStatus,
 )
+
+
+@pytest.mark.asyncio
+async def test_pin_no_catalog_match_defaults_false_in_db(db_session):
+    pin = Pin(batch_id="batch-nocat", status=PinStatus.UNPROCESSED, image_paths=[])
+    db_session.add(pin)
+    await db_session.commit()
+    await db_session.refresh(pin)
+    assert pin.no_catalog_match is False
+
+
+@pytest.mark.asyncio
+async def test_pin_no_catalog_match_persists_true(db_session):
+    pin = Pin(
+        batch_id="batch-nocat2",
+        status=PinStatus.UNPROCESSED,
+        image_paths=[],
+        no_catalog_match=True,
+    )
+    db_session.add(pin)
+    await db_session.commit()
+    result = await db_session.execute(select(Pin).where(Pin.id == pin.id))
+    assert result.scalar_one().no_catalog_match is True
 
 
 @pytest.mark.asyncio

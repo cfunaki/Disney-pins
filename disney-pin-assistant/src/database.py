@@ -1,5 +1,4 @@
 from sqlalchemy import text
-from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from src.config import settings
 
@@ -15,7 +14,9 @@ async def get_db():
 async def ensure_review_ui_columns(engine):
     """Idempotent migration for the human review UI feature."""
     async with engine.begin() as conn:
-        try:
-            await conn.execute(text("ALTER TABLE pins ADD COLUMN no_catalog_match BOOLEAN DEFAULT 0 NOT NULL"))
-        except OperationalError:
-            pass  # column already exists
+        result = await conn.execute(text("PRAGMA table_info(pins)"))
+        existing_columns = {row[1] for row in result.fetchall()}
+        if "no_catalog_match" not in existing_columns:
+            await conn.execute(
+                text("ALTER TABLE pins ADD COLUMN no_catalog_match BOOLEAN DEFAULT 0 NOT NULL")
+            )
