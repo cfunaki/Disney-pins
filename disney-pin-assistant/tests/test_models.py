@@ -1,6 +1,19 @@
 import pytest
 from sqlalchemy import select
 
+from src.models import Pin, PinStatus
+
+
+def test_pin_no_catalog_match_defaults_false():
+    pin = Pin(batch_id="b", status=PinStatus.UNPROCESSED, image_paths=[])
+    assert pin.no_catalog_match is False
+
+
+def test_pin_no_catalog_match_can_be_set_true():
+    pin = Pin(batch_id="b", status=PinStatus.UNPROCESSED, image_paths=[], no_catalog_match=True)
+    assert pin.no_catalog_match is True
+
+
 from src.models import (
     Pin,
     PinStatus,
