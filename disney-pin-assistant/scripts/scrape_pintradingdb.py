@@ -6,10 +6,17 @@ import json
 import os
 import sys
 
+import httpx
+
 sys.path.insert(0, os.path.dirname(__file__))
 
 from scraper.pinpics_fetcher import RateLimiter
-from scraper.pintradingdb_fetcher import fetch_pin_list_page, fetch_pin_detail, download_pin_image
+from scraper.pintradingdb_fetcher import (
+    create_fetcher_client,
+    fetch_pin_list_page,
+    fetch_pin_detail,
+    download_pin_image,
+)
 from scraper.pintradingdb_parser import parse_pin_detail, extract_pin_ids_from_list
 from scraper.normalizer import normalize_entry
 
@@ -45,6 +52,7 @@ async def discover_pin_ids(
     start_page: int,
     end_page: int,
     limiter: RateLimiter,
+    client: httpx.AsyncClient | None = None,
 ) -> list[str]:
     """Paginate through list pages and collect all pin IDs."""
     all_ids: list[str] = []
@@ -52,7 +60,7 @@ async def discover_pin_ids(
 
     for page_num in range(start_page, end_page + 1):
         print(f"[discover] Fetching list page {page_num}/{end_page}...")
-        html = await fetch_pin_list_page(page_num, limiter)
+        html = await fetch_pin_list_page(page_num, limiter, client=client)
         if html is None:
             print(f"[discover] No response for page {page_num}, stopping discovery.")
             break
@@ -86,53 +94,64 @@ async def scrape(args: argparse.Namespace) -> None:
 
     limiter = RateLimiter(requests_per_second=args.rate)
 
-    # Determine pin IDs to process
-    if args.pin_ids:
-        pin_ids = [pid.strip() for pid in args.pin_ids.split(",") if pid.strip()]
-        print(f"[scraper] Using {len(pin_ids)} provided pin IDs.")
-    else:
-        print(f"[scraper] Discovering pin IDs from pages {args.start_page}–{args.end_page}...")
-        pin_ids = await discover_pin_ids(args.start_page, args.end_page, limiter)
-        print(f"[scraper] Discovered {len(pin_ids)} pin IDs total.")
-
-    total = len(pin_ids)
-    fetched = 0
-    skipped = 0
-
-    print(f"[scraper] Processing {total} pins...")
-
-    for i, pin_id in enumerate(pin_ids, start=1):
-        if args.resume and pin_id in entries:
-            skipped += 1
-            continue
-
-        html = await fetch_pin_detail(pin_id, limiter)
-        if html is None:
-            fetched += 1
+    async with create_fetcher_client() as client:
+        # Determine pin IDs to process
+        if args.pin_ids:
+            pin_ids = [pid.strip() for pid in args.pin_ids.split(",") if pid.strip()]
+            print(f"[scraper] Using {len(pin_ids)} provided pin IDs.")
         else:
-            raw = parse_pin_detail(html, pin_id)
-            normalized = normalize_entry(raw)
+            print(f"[scraper] Discovering pin IDs from pages {args.start_page}–{args.end_page}...")
+            pin_ids = await discover_pin_ids(args.start_page, args.end_page, limiter, client=client)
+            print(f"[scraper] Discovered {len(pin_ids)} pin IDs total.")
 
-            # Download image if available
-            image_url = raw.get("reference_image_url")
-            if image_url:
-                image_path = await download_pin_image(image_url, pin_id, image_dir, limiter)
-                if image_path:
-                    normalized["image_path"] = image_path
+        total = len(pin_ids)
+        fetched = 0
+        skipped = 0
+        burst_pause = args.burst_pause
 
-            entries[pin_id] = normalized
-            fetched += 1
+        est_seconds = total * (2 / args.rate)  # ~2 requests per pin (detail + image)
+        est_minutes = est_seconds / 60
+        print(f"[scraper] Processing {total} pins (est. {est_minutes:.0f} min at {args.rate} RPS)...")
 
-        processed = fetched + skipped
-        if processed % 50 == 0:
-            print(
-                f"[progress] Processed {processed}/{total} "
-                f"| Entries collected: {len(entries)}"
-            )
+        for i, pin_id in enumerate(pin_ids, start=1):
+            if args.resume and pin_id in entries:
+                skipped += 1
+                continue
 
-        if fetched % 200 == 0 and fetched > 0:
-            save_entries(output_path, entries)
-            print(f"[checkpoint] Saved {len(entries)} entries to {output_path}")
+            html = await fetch_pin_detail(pin_id, limiter, client=client)
+            if html is None:
+                fetched += 1
+            else:
+                raw = parse_pin_detail(html, pin_id)
+                normalized = normalize_entry(raw)
+
+                # Download image if available
+                image_url = raw.get("reference_image_url")
+                if image_url:
+                    image_path = await download_pin_image(
+                        image_url, pin_id, image_dir, limiter, client=client,
+                    )
+                    if image_path:
+                        normalized["image_path"] = image_path
+
+                entries[pin_id] = normalized
+                fetched += 1
+
+            processed = fetched + skipped
+            if processed % 50 == 0 and processed > 0:
+                print(
+                    f"[progress] Processed {processed}/{total} "
+                    f"| Entries collected: {len(entries)}"
+                )
+
+            if fetched % 200 == 0 and fetched > 0:
+                save_entries(output_path, entries)
+                print(f"[checkpoint] Saved {len(entries)} entries to {output_path}")
+
+            # Burst pause: rest every N pins to stay under rate limit windows
+            if burst_pause > 0 and fetched > 0 and fetched % args.burst_size == 0:
+                print(f"[pause] Cooling down {burst_pause}s after {fetched} pins...")
+                await asyncio.sleep(burst_pause)
 
     # Final save
     save_entries(output_path, entries)
@@ -174,9 +193,23 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--rate",
         type=float,
-        default=1.0,
+        default=0.33,
         metavar="RPS",
-        help="Requests per second (default: 1.0).",
+        help="Requests per second (default: 0.33 — tested optimal for PinTradingDB).",
+    )
+    parser.add_argument(
+        "--burst-size",
+        type=int,
+        default=20,
+        metavar="N",
+        help="Number of pins to process before pausing (default: 20).",
+    )
+    parser.add_argument(
+        "--burst-pause",
+        type=float,
+        default=10.0,
+        metavar="SECONDS",
+        help="Seconds to pause after each burst (default: 10). Set to 0 to disable.",
     )
     parser.add_argument(
         "--resume",
