@@ -1,11 +1,25 @@
 import csv
 import io
 import json
+import os
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.database import get_db
 from src.models import CatalogEntry
+from src.pipeline.image_matching import compute_clip_embedding
+
+
+def generate_embedding_for_entry(image_path: str) -> list[float] | None:
+    """Generate a CLIP embedding for a catalog entry's image."""
+    if not image_path or not os.path.exists(image_path):
+        return None
+    try:
+        return compute_clip_embedding(image_path)
+    except Exception as exc:
+        print(f"[catalog] Failed to generate embedding for {image_path}: {exc}")
+        return None
+
 
 router = APIRouter(prefix="/api/catalog")
 
@@ -47,8 +61,23 @@ async def import_catalog_json(file: UploadFile = File(...), db: AsyncSession = D
     entries = json.loads(content.decode("utf-8"))
     if not isinstance(entries, list):
         raise HTTPException(status_code=400, detail="Expected a JSON array")
+
+    # Build a set of existing (source, source_reference_id) pairs to detect duplicates
+    existing_result = await db.execute(
+        select(CatalogEntry.source, CatalogEntry.source_reference_id).where(
+            CatalogEntry.source_reference_id.isnot(None)
+        )
+    )
+    existing_pairs = {(row[0], row[1]) for row in existing_result.all()}
+
     count = 0
+    skipped = 0
     for item in entries:
+        source = item.get("source", "import")
+        ref_id = item.get("source_reference_id")
+        if ref_id is not None and (source, ref_id) in existing_pairs:
+            skipped += 1
+            continue
         entry = CatalogEntry(
             canonical_name=item.get("canonical_name", item.get("name", "")),
             alternate_names=item.get("alternate_names", []),
@@ -60,15 +89,24 @@ async def import_catalog_json(file: UploadFile = File(...), db: AsyncSession = D
             release_year=item.get("release_year"),
             pin_type=item.get("pin_type"),
             exclusive_source=item.get("exclusive_source"),
-            source=item.get("source", "import"),
-            source_reference_id=item.get("source_reference_id"),
+            source=source,
+            source_reference_id=ref_id,
             reference_image_url=item.get("reference_image_url"),
+            image_path=item.get("image_path"),
             evidence_strength=item.get("evidence_strength", "medium"),
         )
         db.add(entry)
+        # Generate CLIP embedding if image is available
+        image_path = item.get("image_path")
+        if image_path:
+            embedding = generate_embedding_for_entry(image_path)
+            if embedding:
+                entry.clip_embedding = json.dumps(embedding)
         count += 1
+        if ref_id is not None:
+            existing_pairs.add((source, ref_id))
     await db.commit()
-    return {"imported": count}
+    return {"imported": count, "skipped": skipped}
 
 @router.get("/search")
 async def search_catalog(q: str, db: AsyncSession = Depends(get_db)):

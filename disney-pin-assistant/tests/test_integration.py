@@ -66,7 +66,11 @@ async def test_full_pipeline(full_test_app):
 
         # Step 2: Process (with mocked external calls)
         with patch("src.pipeline.vision.call_vision_api", new_callable=AsyncMock, return_value=mock_vision), \
-             patch("src.pipeline.comps.ebay_search", new_callable=AsyncMock, return_value=mock_comps):
+             patch("src.pipeline.comps.ebay_search", new_callable=AsyncMock, return_value=mock_comps), \
+             patch("src.pipeline.orchestrator.settings") as mock_settings:
+            mock_settings.ebay_client_id = "test-client-id"
+            mock_settings.ebay_client_secret = "test-client-secret"
+            mock_settings.max_concurrent_processing = 3
             from src.pipeline.orchestrator import process_batch
             await process_batch(session_factory, batch_id)
 

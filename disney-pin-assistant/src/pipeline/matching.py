@@ -1,6 +1,8 @@
+import json
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.models import CatalogEntry
+from src.services.anthropic_client import send_vision_request
 
 async def find_catalog_matches(db: AsyncSession, extraction: dict, max_results: int = 3) -> list[dict]:
     result = await db.execute(select(CatalogEntry))
@@ -83,6 +85,102 @@ def _compute_match_score(entry: CatalogEntry, extraction: dict) -> float:
         return 0.0
     return round(normalized, 2)
 
+async def find_catalog_matches_hybrid(
+    db: AsyncSession,
+    extraction: dict,
+    query_embedding: list[float] | None = None,
+    max_text_candidates: int = 30,
+    max_results: int = 5,
+) -> list[dict]:
+    """Hybrid matching: text scoring → CLIP visual re-ranking.
+
+    Uses SQL pre-filtering to avoid loading the entire catalog into memory.
+    Falls back to full scan only when no filterable attributes are available.
+    """
+    from sqlalchemy import or_
+    from src.pipeline.image_matching import rank_by_visual_similarity
+
+    # Step 1: SQL pre-filter to reduce rows loaded into memory
+    query = select(CatalogEntry)
+    filters = []
+    if extraction.get("franchise"):
+        filters.append(CatalogEntry.franchise.ilike(extraction["franchise"]))
+    if extraction.get("pin_type"):
+        filters.append(CatalogEntry.pin_type.ilike(extraction["pin_type"]))
+    if extraction.get("edition_size"):
+        filters.append(CatalogEntry.edition_size == extraction["edition_size"])
+    if filters:
+        # Use OR so we get a broad set, then score precisely in Python
+        filtered_query = query.where(or_(*filters))
+        result = await db.execute(filtered_query)
+        all_entries = result.scalars().all()
+        # Fall back to full scan if pre-filter matched nothing
+        if not all_entries:
+            result = await db.execute(query)
+            all_entries = result.scalars().all()
+    else:
+        result = await db.execute(query)
+        all_entries = result.scalars().all()
+
+    def _entry_to_dict(entry: CatalogEntry, score: float, reasoning: str) -> dict:
+        return {
+            "catalog_entry_id": entry.id,
+            "canonical_name": entry.canonical_name,
+            "characters": entry.characters,
+            "franchise": entry.franchise,
+            "event": entry.event,
+            "edition_size": entry.edition_size,
+            "release_year": entry.release_year,
+            "pin_type": entry.pin_type,
+            "evidence_strength": entry.evidence_strength,
+            "source_reference_id": entry.source_reference_id,
+            "image_path": entry.image_path,
+            "clip_embedding": entry.clip_embedding,
+            "confidence": score,
+            "reasoning": reasoning,
+        }
+
+    scored = []
+    for entry in all_entries:
+        score = _compute_match_score(entry, extraction)
+        if score > 0:
+            scored.append(_entry_to_dict(entry, score, _build_reasoning(entry, extraction)))
+
+    scored.sort(key=lambda x: x["confidence"], reverse=True)
+    text_candidates = scored[:max_text_candidates]
+
+    # Step 2: Visual re-ranking (if embedding available)
+    if query_embedding is not None and text_candidates:
+        candidates_with_embeddings = [
+            c for c in text_candidates if c.get("clip_embedding") is not None
+        ]
+        if candidates_with_embeddings:
+            reranked = rank_by_visual_similarity(
+                query_embedding, candidates_with_embeddings, top_k=max_results
+            )
+            without_embeddings = [
+                c for c in text_candidates if c.get("clip_embedding") is None
+            ]
+            result_list = reranked + without_embeddings
+            return result_list[:max_results]
+
+    # Step 3: Visual-only fallback when text scoring finds nothing
+    # (common when catalog lacks structured metadata like characters/franchise)
+    if query_embedding is not None and not text_candidates:
+        all_as_candidates = [
+            _entry_to_dict(entry, 0.0, "Visual match only")
+            for entry in all_entries
+            if entry.clip_embedding is not None
+        ]
+        if all_as_candidates:
+            return rank_by_visual_similarity(
+                query_embedding, all_as_candidates, top_k=max_results
+            )
+
+    # Fallback: text-only
+    return text_candidates[:max_results]
+
+
 def _build_reasoning(entry: CatalogEntry, extraction: dict) -> str:
     reasons = []
     extracted_chars = {c.lower() for c in (extraction.get("characters") or [])}
@@ -102,3 +200,69 @@ def _build_reasoning(entry: CatalogEntry, extraction: dict) -> str:
         if extraction["pin_type"].lower() == entry.pin_type.lower():
             reasons.append(f"Pin type match: {entry.pin_type}")
     return "; ".join(reasons) if reasons else "Weak match"
+
+
+VISION_CONFIRM_PROMPT = """You are comparing a user's Disney pin photo against catalog reference images to find an exact match.
+
+The FIRST image is the user's photo of a pin they want to identify.
+The remaining images are catalog reference images of candidate pins.
+
+For each candidate, I'll tell you its catalog_entry_id and name.
+
+Candidates:
+{candidates_text}
+
+Compare the user's pin photo against each candidate image. Look at:
+- The exact character pose and expression
+- Background design, colors, and patterns
+- Pin shape and border style
+- Any text, numbers, or logos on the pin
+- Edition markings or backstamp details
+
+Return ONLY valid JSON:
+{{"best_match_catalog_entry_id": <id or null if none match>, "confidence": "high" | "medium" | "low", "reasoning": "brief explanation"}}
+
+If NONE of the candidates match the user's pin, return null for best_match_catalog_entry_id."""
+
+
+async def confirm_match_with_vision(
+    user_image_path: str,
+    candidates: list[dict],
+) -> dict | None:
+    """Use Claude Vision to confirm which catalog pin matches the user's photo."""
+    candidates_text = "\n".join(
+        f"- catalog_entry_id={c['catalog_entry_id']}: {c['canonical_name']}"
+        for c in candidates
+    )
+    prompt = VISION_CONFIRM_PROMPT.format(candidates_text=candidates_text)
+
+    image_paths = [user_image_path]
+    for c in candidates:
+        if c.get("image_path"):
+            image_paths.append(c["image_path"])
+
+    try:
+        raw_response = await send_vision_request(image_paths, prompt)
+        text = raw_response.strip()
+        if text.startswith("```"):
+            text = text.split("\n", 1)[1]
+            if text.endswith("```"):
+                text = text[:-3]
+        result = json.loads(text.strip())
+
+        best_id = result.get("best_match_catalog_entry_id")
+        if best_id is None:
+            return None
+
+        for candidate in candidates:
+            if candidate["catalog_entry_id"] == best_id:
+                confirmed = dict(candidate)
+                confirmed["vision_confirmed"] = True
+                confirmed["vision_reasoning"] = result.get("reasoning", "")
+                return confirmed
+
+        return None
+
+    except Exception as exc:
+        print(f"[matching] Vision confirmation failed: {exc}")
+        return None
