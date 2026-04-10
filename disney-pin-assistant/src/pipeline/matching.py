@@ -111,31 +111,40 @@ async def find_catalog_matches_hybrid(
         filters.append(CatalogEntry.edition_size == extraction["edition_size"])
     if filters:
         # Use OR so we get a broad set, then score precisely in Python
-        query = query.where(or_(*filters))
+        filtered_query = query.where(or_(*filters))
+        result = await db.execute(filtered_query)
+        all_entries = result.scalars().all()
+        # Fall back to full scan if pre-filter matched nothing
+        if not all_entries:
+            result = await db.execute(query)
+            all_entries = result.scalars().all()
+    else:
+        result = await db.execute(query)
+        all_entries = result.scalars().all()
 
-    result = await db.execute(query)
-    all_entries = result.scalars().all()
+    def _entry_to_dict(entry: CatalogEntry, score: float, reasoning: str) -> dict:
+        return {
+            "catalog_entry_id": entry.id,
+            "canonical_name": entry.canonical_name,
+            "characters": entry.characters,
+            "franchise": entry.franchise,
+            "event": entry.event,
+            "edition_size": entry.edition_size,
+            "release_year": entry.release_year,
+            "pin_type": entry.pin_type,
+            "evidence_strength": entry.evidence_strength,
+            "source_reference_id": entry.source_reference_id,
+            "image_path": entry.image_path,
+            "clip_embedding": entry.clip_embedding,
+            "confidence": score,
+            "reasoning": reasoning,
+        }
 
     scored = []
     for entry in all_entries:
         score = _compute_match_score(entry, extraction)
         if score > 0:
-            scored.append({
-                "catalog_entry_id": entry.id,
-                "canonical_name": entry.canonical_name,
-                "characters": entry.characters,
-                "franchise": entry.franchise,
-                "event": entry.event,
-                "edition_size": entry.edition_size,
-                "release_year": entry.release_year,
-                "pin_type": entry.pin_type,
-                "evidence_strength": entry.evidence_strength,
-                "source_reference_id": entry.source_reference_id,
-                "image_path": entry.image_path,
-                "clip_embedding": entry.clip_embedding,
-                "confidence": score,
-                "reasoning": _build_reasoning(entry, extraction),
-            })
+            scored.append(_entry_to_dict(entry, score, _build_reasoning(entry, extraction)))
 
     scored.sort(key=lambda x: x["confidence"], reverse=True)
     text_candidates = scored[:max_text_candidates]
@@ -154,6 +163,19 @@ async def find_catalog_matches_hybrid(
             ]
             result_list = reranked + without_embeddings
             return result_list[:max_results]
+
+    # Step 3: Visual-only fallback when text scoring finds nothing
+    # (common when catalog lacks structured metadata like characters/franchise)
+    if query_embedding is not None and not text_candidates:
+        all_as_candidates = [
+            _entry_to_dict(entry, 0.0, "Visual match only")
+            for entry in all_entries
+            if entry.clip_embedding is not None
+        ]
+        if all_as_candidates:
+            return rank_by_visual_similarity(
+                query_embedding, all_as_candidates, top_k=max_results
+            )
 
     # Fallback: text-only
     return text_candidates[:max_results]
