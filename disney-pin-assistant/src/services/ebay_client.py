@@ -36,13 +36,20 @@ async def browse_api_search(query: str, filters: str | None = None, limit: int =
         return data.get("itemSummaries", [])
 
 
-async def browse_api_seller_search(seller: str, limit: int = 50) -> list[dict]:
-    """Search active listings by seller username."""
+async def browse_api_seller_search(
+    seller: str, limit: int = 50, offset: int = 0,
+) -> list[dict]:
+    """Search active listings by seller username.
+
+    `offset` supports pagination for callers that need to enumerate a seller's
+    full active catalog (e.g. the pins-n-things eval harness).
+    """
     token = await get_ebay_token()
     params = {
         "q": "disney pin",
         "filter": f"sellers:{{{seller}}}",
         "limit": str(limit),
+        "offset": str(offset),
     }
     async with httpx.AsyncClient() as client:
         response = await client.get(
