@@ -354,11 +354,31 @@ async def test_regenerate_draft_endpoint_rebuilds_draft(test_app):
     pin_id = test_app.state.test_pin_id
     transport = ASGITransport(app=test_app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # Capture upstream state before regenerating the draft
+        pre_response = await client.get(f"/api/pins/{pin_id}")
+        assert pre_response.status_code == 200
+        pre_data = pre_response.json()
+        pre_no_catalog_match = pre_data["no_catalog_match"]
+        pre_catalog_matches = [
+            {"catalog_entry_id": m["catalog_entry_id"], "status": m["status"]}
+            for m in pre_data["catalog_matches"]
+        ]
+
         response = await client.post(f"/api/pins/{pin_id}/draft/regenerate")
+
     assert response.status_code == 200
     data = response.json()
+
+    # Draft title should be rebuilt
     assert data["listing_draft"]["title"] != "OLD TITLE"
     assert "Mickey" in data["listing_draft"]["title"]
+
+    # Upstream match state must be unchanged
+    assert data["no_catalog_match"] == pre_no_catalog_match
+    assert len(data["catalog_matches"]) == len(pre_catalog_matches)
+    post_matches = {m["catalog_entry_id"]: m["status"] for m in data["catalog_matches"]}
+    for pre_match in pre_catalog_matches:
+        assert post_matches[pre_match["catalog_entry_id"]] == pre_match["status"]
 
 
 @pytest.mark.asyncio
