@@ -4,7 +4,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from src.database import get_db
 from src.models import Pin, PinStatus, ListingDraft, ExportStatus, CatalogMatch, CatalogEntry, MatchStatus
-from src.schemas import PinUpdateRequest
+from src.schemas import PinUpdateRequest, MatchSelectRequest, ExtractionPatchRequest
+from src.pipeline.draft_regeneration import regenerate_draft_for_pin
 from src.pipeline.risk_badges import classify_pin_risk
 
 router = APIRouter(prefix="/api")
@@ -90,6 +91,35 @@ async def update_pin(pin_id: int, update: PinUpdateRequest, db: AsyncSession = D
         pin.seller_notes = update.seller_notes
     await db.commit()
     return _serialize_pin(pin)
+
+@router.post("/pins/{pin_id}/match/select")
+async def select_match(pin_id: int, body: MatchSelectRequest, db: AsyncSession = Depends(get_db)):
+    pin = await db.get(Pin, pin_id)
+    if not pin:
+        raise HTTPException(status_code=404, detail="Pin not found")
+
+    entry = await db.get(CatalogEntry, body.catalog_entry_id)
+    if not entry:
+        raise HTTPException(status_code=404, detail="Catalog entry not found")
+
+    result = await db.execute(select(CatalogMatch).where(CatalogMatch.pin_id == pin_id))
+    matches = result.scalars().all()
+
+    chosen = next((m for m in matches if m.catalog_entry_id == body.catalog_entry_id), None)
+    if not chosen:
+        raise HTTPException(status_code=404, detail="Catalog entry is not a candidate for this pin")
+
+    for m in matches:
+        m.status = MatchStatus.ACCEPTED if m.id == chosen.id else MatchStatus.REJECTED
+
+    pin.no_catalog_match = False
+
+    # Regenerate the listing draft from the new accepted match (single atomic transaction)
+    await regenerate_draft_for_pin(db, pin_id)
+    await db.commit()
+
+    # Return the fresh pin dict
+    return await get_pin_detail(pin_id, db)
 
 def _serialize_pin(pin: Pin) -> dict:
     """Serialize a Pin to the wire format with computed risk badge."""
