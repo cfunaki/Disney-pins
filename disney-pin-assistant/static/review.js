@@ -351,8 +351,8 @@ function wireExtractionSection(pin) {
     if (body.edition_size === "" || body.edition_size == null) {
       body.edition_size = null;
     } else {
-      const parsed = parseInt(body.edition_size, 10);
-      body.edition_size = Number.isNaN(parsed) ? null : parsed;
+      const parsed = Number(body.edition_size);
+      body.edition_size = Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
     }
     button.disabled = true;
     button.textContent = "Saving + re-matching…";
@@ -379,6 +379,7 @@ function wireExtractionSection(pin) {
     } catch (err) {
       console.error("save-rematch failed:", err);
       const detailContent = document.getElementById("detail-content");
+      detailContent.querySelectorAll(".detail-error").forEach((el) => el.remove());
       const errorEl = document.createElement("div");
       errorEl.className = "detail-error";
       errorEl.textContent = "Save failed. Please try again.";
