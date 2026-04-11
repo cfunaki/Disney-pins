@@ -184,3 +184,12 @@ async def test_match_none_regenerates_draft_from_extraction(test_app):
     assert data["listing_draft"]["title"] != "OLD TITLE"
     # Title should still mention Mickey because the extraction still has it
     assert "Mickey" in data["listing_draft"]["title"]
+
+
+@pytest.mark.asyncio
+async def test_mark_no_match_404_when_pin_not_found(test_app):
+    transport = ASGITransport(app=test_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post("/api/pins/99999/match/none")
+    assert response.status_code == 404
+    assert "Pin not found" in response.json()["detail"]
