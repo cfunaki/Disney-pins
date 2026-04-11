@@ -42,10 +42,15 @@ function init() {
 }
 
 async function loadBatch() {
-  const response = await fetch(`/api/batch/${state.batchId}/pins`);
-  state.pins = await response.json();
-  renderCounts();
-  renderQueueList();
+  try {
+    const response = await fetch(`/api/batch/${state.batchId}/pins`);
+    state.pins = await response.json();
+    renderCounts();
+    renderQueueList();
+  } catch (err) {
+    console.error("loadBatch failed:", err);
+    document.getElementById("queue-list").innerHTML = '<li class="queue-error">Failed to load pins. Please refresh.</li>';
+  }
 }
 
 function renderCounts() {
@@ -61,9 +66,15 @@ function pinTitle(pin) {
   return "(unknown)";
 }
 
+function _uploadsUrl(imagePath) {
+  if (!imagePath) return "";
+  const match = imagePath.match(/uploads\/(.+)$/);
+  return match ? `/uploads/${match[1]}` : "";
+}
+
 function pinThumbnail(pin) {
   if (pin.image_paths && pin.image_paths.length > 0) {
-    return `/uploads/${pin.image_paths[0].replace(/^.*uploads\//, "")}`;
+    return _uploadsUrl(pin.image_paths[0]);
   }
   return "";
 }
@@ -101,26 +112,173 @@ function renderQueueList() {
     const price = pin.listing_draft && pin.listing_draft.suggested_price
       ? `$${pin.listing_draft.suggested_price.toFixed(0)}` : "—";
     li.innerHTML = `
-      <img class="queue-thumb" src="${pinThumbnail(pin)}" alt="" onerror="this.style.visibility='hidden'">
+      <img class="queue-thumb" src="${pinThumbnail(pin)}" alt="">
       <div class="queue-row-body">
         <div class="queue-title">${escapeHtml(pinTitle(pin))}</div>
         <div class="queue-meta">
-          <span class="badge ${badge.cls}">${badge.text}</span>
+          <span class="badge ${escapeHtml(badge.cls)}">${escapeHtml(badge.text)}</span>
           <span class="queue-price">${price}</span>
         </div>
       </div>`;
     li.addEventListener("click", () => selectPin(pin.id));
     list.appendChild(li);
+    const img = li.querySelector("img.queue-thumb");
+    if (img) img.addEventListener("error", () => { img.style.visibility = "hidden"; });
   }
 }
 
 async function selectPin(pinId) {
   state.selectedPinId = pinId;
   renderQueueList();
-  // Detail rendering added in Task 13
   document.getElementById("detail-empty").hidden = true;
   document.getElementById("detail-content").hidden = false;
-  document.getElementById("detail-content").textContent = `Loading pin ${pinId}…`;
+  document.getElementById("detail-content").innerHTML = '<div class="loading">Loading…</div>';
+  try {
+    const response = await fetch(`/api/pins/${pinId}`);
+    const pin = await response.json();
+    const idx = state.pins.findIndex((p) => p.id === pin.id);
+    if (idx >= 0) state.pins[idx] = pin;
+    renderDetail(pin);
+  } catch (err) {
+    console.error("selectPin failed:", err);
+    document.getElementById("detail-content").innerHTML = '<div class="detail-error">Failed to load pin details. Please try again.</div>';
+  }
+}
+
+function renderDetail(pin) {
+  const container = document.getElementById("detail-content");
+  container.innerHTML = `
+    ${renderDetailHeader(pin)}
+    <div class="detail-section" id="match-section">${renderMatchSection(pin)}</div>
+    <div class="detail-section" id="extraction-section"><!-- Task 14 --></div>
+    <div class="detail-section" id="draft-section"><!-- Task 15 --></div>
+  `;
+  wireMatchSection(pin);
+}
+
+function renderDetailHeader(pin) {
+  const badge = RISK_LABELS[pin.risk_badge] || { text: "", cls: "" };
+  const title = pinTitle(pin);
+  const reason = riskReason(pin);
+  return `
+    <div class="detail-header">
+      <div>
+        <div class="detail-title">Pin #${pin.id} · ${escapeHtml(title)}</div>
+        <div class="detail-subtitle"><span class="badge ${escapeHtml(badge.cls)}">${escapeHtml(badge.text)}</span> ${escapeHtml(reason)}</div>
+      </div>
+      <div class="detail-actions">
+        <button class="btn-approve" data-action="approve">Approve</button>
+        <button class="btn-skip" data-action="skip">Skip</button>
+      </div>
+    </div>`;
+}
+
+function riskReason(pin) {
+  if (pin.risk_badge === "ambiguous_match" && pin.catalog_matches && pin.catalog_matches.length >= 2) {
+    const sorted = pin.catalog_matches.slice().sort((a, b) => b.match_confidence - a.match_confidence);
+    const gap = (sorted[0].match_confidence - sorted[1].match_confidence).toFixed(2);
+    return `Top two within ${gap}`;
+  }
+  if (pin.risk_badge === "low_extraction") {
+    return `Vision confidence ${(pin.extraction.confidence_score * 100).toFixed(0)}%`;
+  }
+  if (pin.risk_badge === "no_match") {
+    return pin.no_catalog_match ? "Marked no catalog match" : "Matcher returned no candidates";
+  }
+  return "";
+}
+
+function userPhoto(pin) {
+  if (pin.image_paths && pin.image_paths.length > 0) {
+    return _uploadsUrl(pin.image_paths[0]);
+  }
+  return "";
+}
+
+function catalogPhoto(match) {
+  if (!match || !match.image_path) return "";
+  return `/${match.image_path}`;
+}
+
+function renderMatchSection(pin) {
+  const matches = (pin.catalog_matches || []).slice().sort((a, b) => b.match_confidence - a.match_confidence);
+  const accepted = matches.find((m) => m.status === "accepted");
+  const selected = accepted || matches[0] || null;
+
+  if (matches.length === 0) {
+    return `
+      <div class="section-label">Section 1 · Match Review</div>
+      <div class="empty-match">
+        <p>No catalog candidates found for this pin.</p>
+        <div class="match-actions">
+          <button class="btn-danger" data-match-action="none">✗ Mark as no match</button>
+          <button class="btn-neutral" data-match-action="search">🔍 Search catalog…</button>
+        </div>
+      </div>`;
+  }
+
+  const candidatesHtml = matches.map((m, i) => {
+    const letter = String.fromCharCode(65 + i);
+    const isSelected = selected && m.catalog_entry_id === selected.catalog_entry_id;
+    const isAccepted = m.status === "accepted";
+    return `
+      <div class="candidate-card${isSelected ? " selected" : ""}${isAccepted ? " accepted" : ""}"
+           data-catalog-entry-id="${m.catalog_entry_id}">
+        <div class="candidate-image" style="background-image:url('${catalogPhoto(m)}')">${letter} · ${m.match_confidence.toFixed(2)}${isAccepted ? " ✓" : ""}</div>
+        <div class="candidate-name">${escapeHtml(m.canonical_name || "(no name)")}</div>
+      </div>`;
+  }).join("");
+
+  const selectedHtml = selected ? `
+    <div class="compare-pane">
+      <div class="compare-label">Selected Catalog Match</div>
+      <div class="compare-image" style="background-image:url('${catalogPhoto(selected)}')"></div>
+      <div class="compare-meta">
+        <strong>${escapeHtml(selected.canonical_name || "")}</strong><br>
+        <span class="muted">${escapeHtml(selected.source || "")} · ${selected.edition_size ? "LE " + selected.edition_size : ""} · ${selected.release_year || ""}</span>
+      </div>
+    </div>` : "";
+
+  return `
+    <div class="section-label">Section 1 · Match Review</div>
+    <div class="compare-row">
+      <div class="compare-pane">
+        <div class="compare-label">Your Photo</div>
+        <div class="compare-image" style="background-image:url('${userPhoto(pin)}')"></div>
+      </div>
+      ${selectedHtml}
+    </div>
+    <div class="match-actions">
+      <button class="btn-success" data-match-action="accept">✓ Accept this match</button>
+      <button class="btn-danger" data-match-action="none">✗ None of these</button>
+      <button class="btn-neutral" data-match-action="search">🔍 Search catalog…</button>
+    </div>
+    <div class="section-label">Top ${matches.length} candidates · click to compare</div>
+    <div class="candidate-strip">${candidatesHtml}</div>
+  `;
+}
+
+function wireMatchSection(pin) {
+  const container = document.getElementById("detail-content");
+  container.querySelectorAll(".candidate-card").forEach((card) => {
+    card.addEventListener("click", () => {
+      const id = parseInt(card.dataset.catalogEntryId, 10);
+      container.querySelectorAll(".candidate-card").forEach((c) => c.classList.remove("selected"));
+      card.classList.add("selected");
+      const match = pin.catalog_matches.find((m) => m.catalog_entry_id === id);
+      if (match) {
+        const compareRow = container.querySelector(".compare-row");
+        const compareCol = compareRow.querySelectorAll(".compare-pane")[1];
+        if (compareCol) {
+          compareCol.querySelector(".compare-image").style.backgroundImage = `url('${catalogPhoto(match)}')`;
+          compareCol.querySelector(".compare-meta").innerHTML =
+            `<strong>${escapeHtml(match.canonical_name || "")}</strong><br>` +
+            `<span class="muted">${escapeHtml(match.source || "")} · ${match.edition_size ? "LE " + match.edition_size : ""} · ${match.release_year || ""}</span>`;
+        }
+      }
+      container.dataset.visualSelectedId = id;
+    });
+  });
 }
 
 function escapeHtml(s) {
