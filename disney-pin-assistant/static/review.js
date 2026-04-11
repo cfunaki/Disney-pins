@@ -512,8 +512,7 @@ async function runCatalogSearch(append) {
     if (!resp.ok) {
       throw new Error(`Catalog search failed: ${resp.status}`);
     }
-    const payload = await resp.json();
-    const entries = Array.isArray(payload) ? payload : (payload.entries || payload.results || []);
+    const entries = await resp.json();
 
     if (!append) results.innerHTML = "";
 
@@ -546,6 +545,13 @@ async function runCatalogSearch(append) {
       btn.dataset.wired = "1";
       btn.addEventListener("click", async () => {
         if (!catalogModalPin) return;
+        // Re-read the target pin from state at click time so a queue click
+        // that switches the selection while the modal is open can't cause
+        // the match to be applied to the wrong pin.
+        if (state.selectedPinId !== catalogModalPin.id) {
+          closeCatalogSearchModal();
+          return;
+        }
         const entryId = parseInt(btn.dataset.entryId, 10);
         if (!Number.isInteger(entryId)) return;
         btn.disabled = true;
