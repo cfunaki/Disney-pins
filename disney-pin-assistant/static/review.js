@@ -8,6 +8,11 @@ const state = {
   filter: "",
 };
 
+let catalogSearchOffset = 0;
+let catalogSearchQuery = "";
+let catalogModalPin = null;
+let catalogSearchDebounceTimer = null;
+
 const RISK_RANK = {
   no_match: 0,
   ambiguous_match: 1,
@@ -38,6 +43,33 @@ function init() {
     state.sortBy = e.target.value;
     renderQueueList();
   });
+
+  const modal = document.getElementById("catalog-modal");
+  if (modal) {
+    const closeBtn = modal.querySelector(".modal-close");
+    if (closeBtn) closeBtn.addEventListener("click", closeCatalogSearchModal);
+    const backdrop = modal.querySelector(".modal-backdrop");
+    if (backdrop) backdrop.addEventListener("click", closeCatalogSearchModal);
+    const input = modal.querySelector("#catalog-search-input");
+    if (input) {
+      input.addEventListener("input", (e) => {
+        catalogSearchQuery = e.target.value;
+        catalogSearchOffset = 0;
+        if (catalogSearchDebounceTimer) clearTimeout(catalogSearchDebounceTimer);
+        catalogSearchDebounceTimer = setTimeout(() => {
+          runCatalogSearch(false);
+        }, 250);
+      });
+    }
+    const loadMoreBtn = modal.querySelector("#catalog-load-more");
+    if (loadMoreBtn) {
+      loadMoreBtn.addEventListener("click", () => {
+        catalogSearchOffset += 20;
+        runCatalogSearch(true);
+      });
+    }
+  }
+
   loadBatch();
 }
 
@@ -428,7 +460,140 @@ function wireMatchSection(pin) {
 }
 
 function openCatalogSearchModal(pin) {
-  alert("Catalog search modal not yet implemented.");
+  const modal = document.getElementById("catalog-modal");
+  if (!modal) return;
+  catalogModalPin = pin;
+  catalogSearchOffset = 0;
+  catalogSearchQuery = "";
+  const input = modal.querySelector("#catalog-search-input");
+  if (input) input.value = "";
+  const results = modal.querySelector("#catalog-results");
+  if (results) results.innerHTML = "";
+  const loadMoreBtn = modal.querySelector("#catalog-load-more");
+  if (loadMoreBtn) loadMoreBtn.hidden = true;
+  modal.querySelectorAll(".modal-error").forEach((el) => el.remove());
+  modal.hidden = false;
+  if (input) input.focus();
+}
+
+function closeCatalogSearchModal() {
+  const modal = document.getElementById("catalog-modal");
+  if (!modal) return;
+  modal.hidden = true;
+  catalogModalPin = null;
+  catalogSearchQuery = "";
+  catalogSearchOffset = 0;
+  if (catalogSearchDebounceTimer) {
+    clearTimeout(catalogSearchDebounceTimer);
+    catalogSearchDebounceTimer = null;
+  }
+}
+
+async function runCatalogSearch(append) {
+  const modal = document.getElementById("catalog-modal");
+  if (!modal) return;
+  const results = modal.querySelector("#catalog-results");
+  const loadMoreBtn = modal.querySelector("#catalog-load-more");
+  if (!results) return;
+
+  // Clear any previous modal errors on each attempt
+  modal.querySelectorAll(".modal-error").forEach((el) => el.remove());
+
+  const query = catalogSearchQuery.trim();
+  if (!query) {
+    results.innerHTML = "";
+    if (loadMoreBtn) loadMoreBtn.hidden = true;
+    return;
+  }
+
+  try {
+    const url = `/api/catalog/search?q=${encodeURIComponent(query)}&offset=${catalogSearchOffset}`;
+    const resp = await fetch(url);
+    if (!resp.ok) {
+      throw new Error(`Catalog search failed: ${resp.status}`);
+    }
+    const payload = await resp.json();
+    const entries = Array.isArray(payload) ? payload : (payload.entries || payload.results || []);
+
+    if (!append) results.innerHTML = "";
+
+    const fragment = document.createDocumentFragment();
+    for (const e of entries) {
+      const card = document.createElement("div");
+      card.className = "catalog-result-card";
+      const metaLine = [
+        e.franchise || "",
+        e.release_year != null ? String(e.release_year) : "",
+        e.edition_size != null ? `LE ${e.edition_size}` : "",
+      ].filter((s) => s && s.length > 0).join(" · ");
+      const thumbPath = e.image_path ? `/${e.image_path}` : "";
+      card.innerHTML = `
+        <div class="catalog-thumb" data-bg="${escapeHtml(thumbPath)}"></div>
+        <div class="catalog-result-body">
+          <div class="catalog-result-name">${escapeHtml(e.canonical_name || "(no name)")}</div>
+          <div class="catalog-result-meta muted">${escapeHtml(metaLine)}</div>
+        </div>
+        <button class="btn-primary catalog-use-btn" type="button" data-entry-id="${escapeHtml(String(e.id))}">Use this</button>
+      `;
+      fragment.appendChild(card);
+    }
+    results.appendChild(fragment);
+    _applyBackgrounds(results);
+
+    // Wire up "Use this" buttons for the newly added cards
+    results.querySelectorAll(".catalog-use-btn").forEach((btn) => {
+      if (btn.dataset.wired === "1") return;
+      btn.dataset.wired = "1";
+      btn.addEventListener("click", async () => {
+        if (!catalogModalPin) return;
+        const entryId = parseInt(btn.dataset.entryId, 10);
+        if (!Number.isInteger(entryId)) return;
+        btn.disabled = true;
+        const originalText = btn.textContent;
+        btn.textContent = "Selecting…";
+        const pinId = catalogModalPin.id;
+        try {
+          const selectResp = await fetch(`/api/pins/${pinId}/match/select`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ catalog_entry_id: entryId }),
+          });
+          if (!selectResp.ok) {
+            throw new Error(`Select failed: ${selectResp.status}`);
+          }
+          const updated = await selectResp.json();
+          closeCatalogSearchModal();
+          replacePinInStateAndRender(updated);
+        } catch (err) {
+          console.error("catalog use failed:", err);
+          closeCatalogSearchModal();
+          const detailContent = document.getElementById("detail-content");
+          if (detailContent) {
+            detailContent.querySelectorAll(".detail-error").forEach((el) => el.remove());
+            const errorEl = document.createElement("div");
+            errorEl.className = "detail-error";
+            errorEl.textContent = "Catalog selection failed. Please try again.";
+            detailContent.prepend(errorEl);
+          }
+        } finally {
+          btn.disabled = false;
+          btn.textContent = originalText;
+        }
+      });
+    });
+
+    if (loadMoreBtn) {
+      loadMoreBtn.hidden = entries.length < 20;
+    }
+  } catch (err) {
+    console.error("runCatalogSearch failed:", err);
+    modal.querySelectorAll(".modal-error").forEach((el) => el.remove());
+    const errorEl = document.createElement("div");
+    errorEl.className = "modal-error";
+    errorEl.textContent = "Catalog search failed. Please try again.";
+    const body = modal.querySelector(".modal-body");
+    if (body) body.prepend(errorEl);
+  }
 }
 
 function renderExtractionSection(pin) {

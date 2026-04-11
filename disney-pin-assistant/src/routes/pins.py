@@ -116,10 +116,22 @@ async def select_match(pin_id: int, body: MatchSelectRequest, db: AsyncSession =
 
     chosen = next((m for m in matches if m.catalog_entry_id == body.catalog_entry_id), None)
     if not chosen:
-        raise HTTPException(status_code=404, detail="Catalog entry is not a candidate for this pin")
+        # Not currently a candidate — insert a new CatalogMatch row for the manual selection
+        max_rank = max((m.rank for m in matches), default=0)
+        chosen = CatalogMatch(
+            pin_id=pin_id,
+            catalog_entry_id=body.catalog_entry_id,
+            match_confidence=0.0,
+            match_reasoning="manually selected by user",
+            rank=max_rank + 1,
+            status=MatchStatus.ACCEPTED,
+        )
+        db.add(chosen)
+        await db.flush()
+        matches.append(chosen)
 
     for m in matches:
-        m.status = MatchStatus.ACCEPTED if m.id == chosen.id else MatchStatus.REJECTED
+        m.status = MatchStatus.ACCEPTED if m.catalog_entry_id == chosen.catalog_entry_id else MatchStatus.REJECTED
 
     pin.no_catalog_match = False
 

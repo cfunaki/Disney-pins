@@ -30,6 +30,19 @@
       <div id="detail-content" class="detail-content" hidden></div>
     </section>
   </div>
+
+  <div id="catalog-modal" class="modal" hidden>
+    <div class="modal-backdrop"></div>
+    <div class="modal-body">
+      <div class="modal-header">
+        <strong>Search catalog</strong>
+        <button class="modal-close" type="button">×</button>
+      </div>
+      <input id="catalog-search-input" type="text" placeholder="Search by name or character…">
+      <div id="catalog-results" class="catalog-results"></div>
+      <button id="catalog-load-more" class="btn-neutral" hidden>Load more</button>
+    </div>
+  </div>
 </div>
 <script src="/static/review.js"></script>
 {% endblock %}
