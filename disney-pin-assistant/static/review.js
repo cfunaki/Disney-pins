@@ -164,11 +164,12 @@ function renderDetail(pin) {
     ${renderDetailHeader(pin)}
     <div class="detail-section" id="match-section">${renderMatchSection(pin)}</div>
     <div class="detail-section" id="extraction-section">${renderExtractionSection(pin)}</div>
-    <div class="detail-section" id="draft-section"><!-- Task 15 --></div>
+    <div class="detail-section" id="draft-section">${renderDraftSection(pin)}</div>
   `;
   _applyBackgrounds(container);
   wireMatchSection(pin);
   wireExtractionSection(pin);
+  wireDraftSection(pin);
 }
 
 function renderDetailHeader(pin) {
@@ -389,6 +390,148 @@ function wireExtractionSection(pin) {
       button.textContent = "💾 Save & Re-match";
     }
   });
+}
+
+function renderDraftSection(pin) {
+  const d = pin.listing_draft || {};
+  const matches = pin.catalog_matches || [];
+  const accepted = matches.find((m) => m.status === "accepted");
+  let banner = "";
+  if (accepted) {
+    banner = `<div class="draft-banner">↻ Draft will auto-regenerate from the accepted match when you click Regenerate.</div>`;
+  } else if (pin.no_catalog_match) {
+    banner = `<div class="draft-banner">⚠ Marked as no catalog match — edit freely below.</div>`;
+  }
+  const suggestedPriceVal = escapeHtml(String(d.suggested_price != null ? d.suggested_price : ""));
+  const quickSalePriceVal = escapeHtml(String(d.quick_sale_price != null ? `$${d.quick_sale_price.toFixed(2)}` : "—"));
+  const priceConfidenceVal = escapeHtml(String(d.price_confidence || "—"));
+  const tagsVal = escapeHtml((d.tags_keywords || []).join(", "));
+  return `
+    <div class="section-label">Section 3 · Listing Draft</div>
+    ${banner}
+    <div class="draft-form">
+      <label>Title
+        <input type="text" maxlength="80" data-draft-field="title" value="${escapeHtml(d.title || "")}">
+      </label>
+      <label>Description
+        <textarea data-draft-field="description" rows="5">${escapeHtml(d.description || "")}</textarea>
+      </label>
+      <div class="form-grid form-grid-3">
+        <label>Suggested price
+          <input type="number" step="0.01" data-draft-field="suggested_price" value="${suggestedPriceVal}">
+        </label>
+        <label>Quick-sale price
+          <span class="readonly-value">${quickSalePriceVal}</span>
+        </label>
+        <label>Price confidence
+          <span class="readonly-value">${priceConfidenceVal}</span>
+        </label>
+      </div>
+      <label>Tags / keywords
+        <input type="text" data-draft-field="tags_keywords" value="${tagsVal}">
+      </label>
+      <div class="draft-footer">
+        <button class="btn-neutral" data-action="regenerate">↻ Regenerate from match</button>
+        <button class="btn-primary" data-action="save-draft">💾 Save draft</button>
+      </div>
+    </div>
+  `;
+}
+
+function wireDraftSection(pin) {
+  const container = document.getElementById("detail-content");
+  const regenBtn = container.querySelector('[data-action="regenerate"]');
+  const saveBtn = container.querySelector('[data-action="save-draft"]');
+
+  if (regenBtn) {
+    regenBtn.addEventListener("click", async () => {
+      regenBtn.disabled = true;
+      regenBtn.textContent = "Regenerating…";
+      try {
+        const resp = await fetch(`/api/pins/${pin.id}/draft/regenerate`, {
+          method: "POST",
+        });
+        if (!resp.ok) {
+          throw new Error(`Regenerate failed: ${resp.status}`);
+        }
+        const updated = await resp.json();
+        replacePinInStateAndRender(updated);
+      } catch (err) {
+        console.error("regenerate failed:", err);
+        const detailContent = document.getElementById("detail-content");
+        detailContent.querySelectorAll(".detail-error").forEach((el) => el.remove());
+        const errorEl = document.createElement("div");
+        errorEl.className = "detail-error";
+        errorEl.textContent = "Regenerate failed. Please try again.";
+        detailContent.prepend(errorEl);
+      } finally {
+        regenBtn.disabled = false;
+        regenBtn.textContent = "↻ Regenerate from match";
+      }
+    });
+  }
+
+  if (saveBtn) {
+    saveBtn.addEventListener("click", async () => {
+      const body = collectDraftFields(container);
+      saveBtn.disabled = true;
+      saveBtn.textContent = "Saving…";
+      try {
+        const resp = await fetch(`/api/pins/${pin.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!resp.ok) {
+          throw new Error(`Draft save failed: ${resp.status}`);
+        }
+        const updated = await resp.json();
+        replacePinInStateAndRender(updated);
+      } catch (err) {
+        console.error("save-draft failed:", err);
+        const detailContent = document.getElementById("detail-content");
+        detailContent.querySelectorAll(".detail-error").forEach((el) => el.remove());
+        const errorEl = document.createElement("div");
+        errorEl.className = "detail-error";
+        errorEl.textContent = "Draft save failed. Please try again.";
+        detailContent.prepend(errorEl);
+      } finally {
+        saveBtn.disabled = false;
+        saveBtn.textContent = "💾 Save draft";
+      }
+    });
+  }
+}
+
+function collectDraftFields(container) {
+  const body = {};
+  container.querySelectorAll("#draft-section [data-draft-field]").forEach((inp) => {
+    const field = inp.dataset.draftField;
+    if (field === "tags_keywords") {
+      body[field] = inp.value
+        .split(",")
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+    } else if (field === "suggested_price") {
+      if (inp.value === "" || inp.value == null) {
+        body[field] = null;
+      } else {
+        const parsed = Number(inp.value);
+        body[field] = Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+      }
+    } else {
+      body[field] = inp.value || null;
+    }
+  });
+  return body;
+}
+
+function replacePinInStateAndRender(pin) {
+  const idx = state.pins.findIndex((p) => p.id === pin.id);
+  if (idx >= 0) state.pins[idx] = pin;
+  renderQueueList();
+  renderCounts();
+  renderDetail(pin);
 }
 
 function escapeHtml(s) {
