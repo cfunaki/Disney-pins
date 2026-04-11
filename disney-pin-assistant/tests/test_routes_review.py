@@ -193,3 +193,46 @@ async def test_mark_no_match_404_when_pin_not_found(test_app):
         response = await client.post("/api/pins/99999/match/none")
     assert response.status_code == 404
     assert "Pin not found" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_patch_extraction_updates_fields_and_returns_pin(test_app):
+    pin_id = test_app.state.test_pin_id
+    transport = ASGITransport(app=test_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            f"/api/pins/{pin_id}/extraction",
+            json={"characters": ["Donald Duck"], "edition_size": 999},
+        )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["extraction"]["characters"] == ["Donald Duck"]
+    assert data["extraction"]["edition_size"] == 999
+    # Other fields stay
+    assert data["extraction"]["franchise"] == "Disney"
+
+
+@pytest.mark.asyncio
+async def test_patch_extraction_does_not_regenerate_draft(test_app):
+    pin_id = test_app.state.test_pin_id
+    transport = ASGITransport(app=test_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            f"/api/pins/{pin_id}/extraction",
+            json={"characters": ["Donald Duck"]},
+        )
+    data = response.json()
+    # Draft should still be the old one — re-match is explicit
+    assert data["listing_draft"]["title"] == "OLD TITLE"
+
+
+@pytest.mark.asyncio
+async def test_patch_extraction_404_when_pin_not_found(test_app):
+    transport = ASGITransport(app=test_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/pins/99999/extraction",
+            json={"characters": ["Donald Duck"]},
+        )
+    assert response.status_code == 404
+    assert "Pin not found" in response.json()["detail"]
