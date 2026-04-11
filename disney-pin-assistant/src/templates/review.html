@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block content %}
+<div id="review-app" data-batch-id="{{ batch_id }}">
+  <header class="review-header">
+    <div>
+      <h2 class="review-title">Review Queue</h2>
+      <span class="batch-id">Batch {{ batch_id }}</span>
+      <span id="review-counts" class="review-counts"></span>
+    </div>
+  </header>
+
+  <div class="review-workspace">
+    <aside class="queue-pane" aria-label="Pin queue">
+      <div class="queue-controls">
+        <input id="queue-filter" type="text" placeholder="Filter…" aria-label="Filter pin queue">
+        <select id="queue-sort" aria-label="Sort pin queue">
+          <option value="risk">Sort: Risk ↓</option>
+          <option value="status">Sort: Status</option>
+          <option value="price">Sort: Price ↓</option>
+          <option value="order">Sort: Order added</option>
+        </select>
+      </div>
+      <ul id="queue-list" class="queue-list"></ul>
+    </aside>
+
+    <section class="detail-pane" aria-label="Pin details">
+      <div id="detail-empty" class="detail-empty">
+        Select a pin from the queue.
+      </div>
+      <div id="detail-content" class="detail-content" hidden></div>
+    </section>
+  </div>
+
+  <div id="catalog-modal" class="modal" hidden>
+    <div class="modal-backdrop"></div>
+    <div class="modal-body">
+      <div class="modal-header">
+        <strong>Search catalog</strong>
+        <button class="modal-close" type="button">×</button>
+      </div>
+      <input id="catalog-search-input" type="text" placeholder="Search by name or character…">
+      <div id="catalog-results" class="catalog-results"></div>
+      <button id="catalog-load-more" class="btn-neutral" hidden>Load more</button>
+    </div>
+  </div>
+</div>
+<script src="/static/review.js"></script>
+{% endblock %}
