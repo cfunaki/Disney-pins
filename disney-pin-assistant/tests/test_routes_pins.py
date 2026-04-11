@@ -123,6 +123,17 @@ async def test_pin_dict_includes_no_catalog_match_flag(test_app):
 
 
 @pytest.mark.asyncio
+async def test_update_pin_response_includes_risk_badge(test_app):
+    transport = ASGITransport(app=test_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.patch("/api/pins/1", json={"title": "Updated Title", "suggested_price": 30.00})
+    assert response.status_code == 200
+    data = response.json()
+    assert "risk_badge" in data
+    assert data["risk_badge"] in {"ready", "ambiguous_match", "low_extraction", "no_match", "approved", "exported"}
+
+
+@pytest.mark.asyncio
 async def test_batch_pins_include_risk_badge(test_app):
     transport = ASGITransport(app=test_app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:

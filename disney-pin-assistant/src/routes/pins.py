@@ -20,10 +20,7 @@ async def list_batch_pins(batch_id: str, db: AsyncSession = Depends(get_db)):
         ).where(Pin.batch_id == batch_id)
     )
     pins = result.scalars().all()
-    dicts = [_pin_to_dict(pin) for pin in pins]
-    for d in dicts:
-        d["risk_badge"] = classify_pin_risk(d)
-    return dicts
+    return [_serialize_pin(pin) for pin in pins]
 
 @router.get("/pins/{pin_id}")
 async def get_pin_detail(pin_id: int, db: AsyncSession = Depends(get_db)):
@@ -38,9 +35,7 @@ async def get_pin_detail(pin_id: int, db: AsyncSession = Depends(get_db)):
     pin = result.scalar_one_or_none()
     if not pin:
         raise HTTPException(status_code=404, detail="Pin not found")
-    data = _pin_to_dict(pin)
-    data["risk_badge"] = classify_pin_risk(data)
-    return data
+    return _serialize_pin(pin)
 
 @router.post("/pins/{pin_id}/approve")
 async def approve_pin(pin_id: int, db: AsyncSession = Depends(get_db)):
@@ -94,7 +89,13 @@ async def update_pin(pin_id: int, update: PinUpdateRequest, db: AsyncSession = D
     if update.seller_notes is not None:
         pin.seller_notes = update.seller_notes
     await db.commit()
-    return _pin_to_dict(pin)
+    return _serialize_pin(pin)
+
+def _serialize_pin(pin: Pin) -> dict:
+    """Serialize a Pin to the wire format with computed risk badge."""
+    data = _pin_to_dict(pin)
+    data["risk_badge"] = classify_pin_risk(data)
+    return data
 
 def _pin_to_dict(pin: Pin) -> dict:
     data = {
