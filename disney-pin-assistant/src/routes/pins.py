@@ -223,6 +223,15 @@ async def rematch_pin(pin_id: int, db: AsyncSession = Depends(get_db)):
     await db.commit()
     return await _load_pin_detail(pin_id, db)
 
+@router.post("/pins/{pin_id}/draft/regenerate")
+async def regenerate_draft(pin_id: int, db: AsyncSession = Depends(get_db)):
+    pin = await db.get(Pin, pin_id)
+    if not pin:
+        raise HTTPException(status_code=404, detail="Pin not found")
+    await regenerate_draft_for_pin(db, pin_id)
+    await db.commit()
+    return await _load_pin_detail(pin_id, db)
+
 def _serialize_pin(pin: Pin) -> dict:
     """Serialize a Pin to the wire format with computed risk badge."""
     data = _pin_to_dict(pin)

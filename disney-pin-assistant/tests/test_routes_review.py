@@ -347,3 +347,24 @@ async def test_rematch_404_when_extraction_missing(test_app, monkeypatch):
         response = await client.post(f"/api/pins/{bare_pin_id}/rematch")
     assert response.status_code == 404
     assert "Extraction not found for pin" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_regenerate_draft_endpoint_rebuilds_draft(test_app):
+    pin_id = test_app.state.test_pin_id
+    transport = ASGITransport(app=test_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(f"/api/pins/{pin_id}/draft/regenerate")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["listing_draft"]["title"] != "OLD TITLE"
+    assert "Mickey" in data["listing_draft"]["title"]
+
+
+@pytest.mark.asyncio
+async def test_regenerate_draft_404_when_pin_not_found(test_app):
+    transport = ASGITransport(app=test_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post("/api/pins/99999/draft/regenerate")
+    assert response.status_code == 404
+    assert "Pin not found" in response.json()["detail"]
