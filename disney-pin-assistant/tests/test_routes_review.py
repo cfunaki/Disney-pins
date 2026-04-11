@@ -236,3 +236,30 @@ async def test_patch_extraction_404_when_pin_not_found(test_app):
         )
     assert response.status_code == 404
     assert "Pin not found" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_patch_extraction_404_when_extraction_missing(test_app):
+    from src.database import get_db
+    override = test_app.dependency_overrides[get_db]
+    agen = override()
+    session = await agen.__anext__()
+    try:
+        bare_pin = Pin(batch_id="b", status=PinStatus.UNPROCESSED, image_paths=[])
+        session.add(bare_pin)
+        await session.commit()
+        bare_pin_id = bare_pin.id
+    finally:
+        try:
+            await agen.__anext__()
+        except StopAsyncIteration:
+            pass
+
+    transport = ASGITransport(app=test_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            f"/api/pins/{bare_pin_id}/extraction",
+            json={"characters": ["x"]},
+        )
+    assert response.status_code == 404
+    assert "Extraction not found for pin" in response.json()["detail"]
