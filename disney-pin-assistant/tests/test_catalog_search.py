@@ -5,7 +5,6 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, Asyn
 from src.main import app
 from src.database import get_db
 from src.models import Base, CatalogEntry
-from src.routes.catalog import router as catalog_router
 
 
 @pytest_asyncio.fixture
@@ -19,7 +18,6 @@ async def test_app():
         async with factory() as session:
             yield session
 
-    app.include_router(catalog_router)
     app.dependency_overrides[get_db] = override_get_db
 
     async with factory() as session:
@@ -72,3 +70,21 @@ async def test_search_offset_pagination(test_app):
     page_one_ids = {e["id"] for e in page_one}
     page_two_ids = {e["id"] for e in page_two}
     assert page_one_ids.isdisjoint(page_two_ids)
+
+
+@pytest.mark.asyncio
+async def test_search_returns_empty_list_when_no_matches(test_app):
+    transport = ASGITransport(app=test_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/api/catalog/search?q=NoSuchCharacter")
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+@pytest.mark.asyncio
+async def test_search_offset_beyond_total_returns_empty(test_app):
+    transport = ASGITransport(app=test_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/api/catalog/search?q=Mickey&offset=100")
+    assert response.status_code == 200
+    assert response.json() == []
