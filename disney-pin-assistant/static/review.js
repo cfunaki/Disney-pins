@@ -160,6 +160,7 @@ async function selectPin(pinId) {
 
 function renderDetail(pin) {
   const container = document.getElementById("detail-content");
+  delete container.dataset.visualSelectedId;
   container.innerHTML = `
     ${renderDetailHeader(pin)}
     <div class="detail-section" id="match-section">${renderMatchSection(pin)}</div>
@@ -299,14 +300,23 @@ function wireMatchSection(pin) {
     });
   });
 
-  const detailContent = document.getElementById("detail-content");
-
   const approveBtn = container.querySelector('[data-action="approve"]');
   if (approveBtn) {
     approveBtn.addEventListener("click", async () => {
       approveBtn.disabled = true;
       approveBtn.textContent = "Approving…";
       try {
+        const extractionBody = collectExtractionFields(container);
+        if (Object.keys(extractionBody).length > 0) {
+          const extractionResp = await fetch(`/api/pins/${pin.id}/extraction`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(extractionBody),
+          });
+          if (!extractionResp.ok) {
+            throw new Error(`Extraction save failed: ${extractionResp.status}`);
+          }
+        }
         const draftBody = collectDraftFields(container);
         const patchResp = await fetch(`/api/pins/${pin.id}`, {
           method: "PATCH",
@@ -329,11 +339,11 @@ function wireMatchSection(pin) {
         }
       } catch (err) {
         console.error("approve failed:", err);
-        detailContent.querySelectorAll(".detail-error").forEach((el) => el.remove());
+        container.querySelectorAll(".detail-error").forEach((el) => el.remove());
         const errorEl = document.createElement("div");
         errorEl.className = "detail-error";
         errorEl.textContent = "Approve failed. Please try again.";
-        detailContent.prepend(errorEl);
+        container.prepend(errorEl);
       } finally {
         approveBtn.disabled = false;
         approveBtn.textContent = "Approve";
@@ -356,11 +366,11 @@ function wireMatchSection(pin) {
         await loadBatch();
       } catch (err) {
         console.error("skip failed:", err);
-        detailContent.querySelectorAll(".detail-error").forEach((el) => el.remove());
+        container.querySelectorAll(".detail-error").forEach((el) => el.remove());
         const errorEl = document.createElement("div");
         errorEl.className = "detail-error";
         errorEl.textContent = "Skip failed. Please try again.";
-        detailContent.prepend(errorEl);
+        container.prepend(errorEl);
       } finally {
         skipBtn.disabled = false;
         skipBtn.textContent = "Skip";
@@ -405,11 +415,11 @@ function wireMatchSection(pin) {
         }
       } catch (err) {
         console.error(`match action ${action} failed:`, err);
-        detailContent.querySelectorAll(".detail-error").forEach((el) => el.remove());
+        container.querySelectorAll(".detail-error").forEach((el) => el.remove());
         const errorEl = document.createElement("div");
         errorEl.className = "detail-error";
         errorEl.textContent = action === "accept" ? "Accept failed. Please try again." : "Mark no-match failed. Please try again.";
-        detailContent.prepend(errorEl);
+        container.prepend(errorEl);
       } finally {
         btn.disabled = false;
       }
@@ -458,24 +468,31 @@ function renderExtractionSection(pin) {
   `;
 }
 
+function collectExtractionFields(container) {
+  const body = {};
+  const section = container.querySelector("#extraction-section");
+  if (!section) return body;
+  section.querySelectorAll("[data-field]").forEach((input) => {
+    body[input.dataset.field] = input.value;
+  });
+  if (typeof body.characters === "string") {
+    body.characters = body.characters.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
+  }
+  if (body.edition_size === "" || body.edition_size == null) {
+    body.edition_size = null;
+  } else {
+    const parsed = Number(body.edition_size);
+    body.edition_size = Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
+  }
+  return body;
+}
+
 function wireExtractionSection(pin) {
   const container = document.getElementById("detail-content");
   const button = container.querySelector('[data-action="save-rematch"]');
   if (!button) return;
   button.addEventListener("click", async () => {
-    const body = {};
-    container.querySelectorAll("#extraction-section [data-field]").forEach((input) => {
-      body[input.dataset.field] = input.value;
-    });
-    if (typeof body.characters === "string") {
-      body.characters = body.characters.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
-    }
-    if (body.edition_size === "" || body.edition_size == null) {
-      body.edition_size = null;
-    } else {
-      const parsed = Number(body.edition_size);
-      body.edition_size = Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
-    }
+    const body = collectExtractionFields(container);
     button.disabled = true;
     button.textContent = "Saving + re-matching…";
     try {
