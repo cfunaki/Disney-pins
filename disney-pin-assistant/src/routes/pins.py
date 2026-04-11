@@ -5,7 +5,9 @@ from sqlalchemy.orm import selectinload
 from src.database import get_db
 from src.models import Pin, PinStatus, ListingDraft, ExportStatus, CatalogMatch, CatalogEntry, MatchStatus, VisionExtraction
 from src.schemas import PinUpdateRequest, MatchSelectRequest, ExtractionPatchRequest
-from src.pipeline.draft_regeneration import regenerate_draft_for_pin
+from src.pipeline.draft_regeneration import regenerate_draft_for_pin, extraction_to_dict
+from src.pipeline.image_matching import compute_clip_embedding
+from src.pipeline.matching import find_catalog_matches_hybrid
 from src.pipeline.risk_badges import classify_pin_risk
 
 router = APIRouter(prefix="/api")
@@ -170,6 +172,53 @@ async def patch_extraction(pin_id: int, body: ExtractionPatchRequest, db: AsyncS
     if body.event_clues is not None:
         extraction.event_clues = body.event_clues
 
+    await db.commit()
+    return await _load_pin_detail(pin_id, db)
+
+@router.post("/pins/{pin_id}/rematch")
+async def rematch_pin(pin_id: int, db: AsyncSession = Depends(get_db)):
+    pin = await db.get(Pin, pin_id)
+    if not pin:
+        raise HTTPException(status_code=404, detail="Pin not found")
+
+    extraction_result = await db.execute(
+        select(VisionExtraction).where(VisionExtraction.pin_id == pin_id)
+    )
+    extraction = extraction_result.scalar_one_or_none()
+    if not extraction:
+        raise HTTPException(status_code=404, detail="Extraction not found for pin")
+
+    extraction_dict = extraction_to_dict(extraction)
+
+    query_embedding = None
+    try:
+        if pin.image_paths:
+            query_embedding = compute_clip_embedding(pin.image_paths[0])
+    except Exception as exc:
+        print(f"[rematch] CLIP embedding failed for pin {pin_id}: {exc}")
+
+    new_matches = await find_catalog_matches_hybrid(
+        db, extraction_dict,
+        query_embedding=query_embedding,
+        max_results=5,
+    )
+
+    existing = await db.execute(select(CatalogMatch).where(CatalogMatch.pin_id == pin_id))
+    for old in existing.scalars().all():
+        await db.delete(old)
+
+    for rank, match in enumerate(new_matches, 1):
+        cm = CatalogMatch(
+            pin_id=pin_id,
+            catalog_entry_id=match["catalog_entry_id"],
+            match_confidence=match.get("visual_similarity", match["confidence"]),
+            match_reasoning=match.get("reasoning"),
+            rank=rank,
+            status=MatchStatus.SUGGESTED,
+        )
+        db.add(cm)
+
+    pin.no_catalog_match = False
     await db.commit()
     return await _load_pin_detail(pin_id, db)
 
