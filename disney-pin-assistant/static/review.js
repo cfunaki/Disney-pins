@@ -163,11 +163,12 @@ function renderDetail(pin) {
   container.innerHTML = `
     ${renderDetailHeader(pin)}
     <div class="detail-section" id="match-section">${renderMatchSection(pin)}</div>
-    <div class="detail-section" id="extraction-section"><!-- Task 14 --></div>
+    <div class="detail-section" id="extraction-section">${renderExtractionSection(pin)}</div>
     <div class="detail-section" id="draft-section"><!-- Task 15 --></div>
   `;
   _applyBackgrounds(container);
   wireMatchSection(pin);
+  wireExtractionSection(pin);
 }
 
 function renderDetailHeader(pin) {
@@ -295,6 +296,97 @@ function wireMatchSection(pin) {
       }
       container.dataset.visualSelectedId = id;
     });
+  });
+}
+
+function renderExtractionSection(pin) {
+  const e = pin.extraction || {};
+  const characters = Array.isArray(e.characters) ? e.characters.join(", ") : (e.characters || "");
+  const confidence = e.confidence_score != null
+    ? `${(e.confidence_score * 100).toFixed(0)}%`
+    : "—";
+  return `
+    <div class="section-label">Section 2 · Extraction</div>
+    <div class="extraction-form">
+      <div class="form-grid">
+        <label>Characters
+          <input type="text" data-field="characters" value="${escapeHtml(characters)}">
+        </label>
+        <label>Franchise
+          <input type="text" data-field="franchise" value="${escapeHtml(e.franchise || "")}">
+        </label>
+        <label>Pin type
+          <input type="text" data-field="pin_type" value="${escapeHtml(e.pin_type || "")}">
+        </label>
+        <label>Edition size
+          <input type="number" data-field="edition_size" value="${escapeHtml(String(e.edition_size != null ? e.edition_size : ""))}">
+        </label>
+        <label>Visible dates
+          <input type="text" data-field="visible_dates" value="${escapeHtml(e.visible_dates || "")}">
+        </label>
+        <label>Event clues
+          <input type="text" data-field="event_clues" value="${escapeHtml(e.event_clues || "")}">
+        </label>
+      </div>
+      <div class="extraction-footer">
+        <span class="muted">Vision confidence: ${escapeHtml(String(confidence))}</span>
+        <button class="btn-primary" data-action="save-rematch">💾 Save &amp; Re-match</button>
+      </div>
+    </div>
+  `;
+}
+
+function wireExtractionSection(pin) {
+  const container = document.getElementById("detail-content");
+  const button = container.querySelector('[data-action="save-rematch"]');
+  if (!button) return;
+  button.addEventListener("click", async () => {
+    const body = {};
+    container.querySelectorAll("#extraction-section [data-field]").forEach((input) => {
+      body[input.dataset.field] = input.value;
+    });
+    if (typeof body.characters === "string") {
+      body.characters = body.characters.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
+    }
+    if (body.edition_size === "" || body.edition_size == null) {
+      body.edition_size = null;
+    } else {
+      const parsed = parseInt(body.edition_size, 10);
+      body.edition_size = Number.isNaN(parsed) ? null : parsed;
+    }
+    button.disabled = true;
+    button.textContent = "Saving + re-matching…";
+    try {
+      const extractionResp = await fetch(`/api/pins/${pin.id}/extraction`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!extractionResp.ok) {
+        throw new Error(`Extraction save failed: ${extractionResp.status}`);
+      }
+      const rematchResp = await fetch(`/api/pins/${pin.id}/rematch`, {
+        method: "POST",
+      });
+      if (!rematchResp.ok) {
+        throw new Error(`Rematch failed: ${rematchResp.status}`);
+      }
+      const updated = await rematchResp.json();
+      const idx = state.pins.findIndex((p) => p.id === updated.id);
+      if (idx >= 0) state.pins[idx] = updated;
+      renderQueueList();
+      renderDetail(updated);
+    } catch (err) {
+      console.error("save-rematch failed:", err);
+      const detailContent = document.getElementById("detail-content");
+      const errorEl = document.createElement("div");
+      errorEl.className = "detail-error";
+      errorEl.textContent = "Save failed. Please try again.";
+      detailContent.prepend(errorEl);
+    } finally {
+      button.disabled = false;
+      button.textContent = "💾 Save & Re-match";
+    }
   });
 }
 
