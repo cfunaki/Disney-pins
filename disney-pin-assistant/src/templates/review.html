@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block content %}
+<div id="review-app" data-batch-id="{{ batch_id }}">
+  <header class="review-header">
+    <div>
+      <strong>Review Queue</strong>
+      <span class="batch-id">Batch {{ batch_id }}</span>
+      <span id="review-counts" class="review-counts"></span>
+    </div>
+  </header>
+
+  <div class="review-workspace">
+    <aside class="queue-pane">
+      <div class="queue-controls">
+        <input id="queue-filter" type="text" placeholder="Filter…">
+        <select id="queue-sort">
+          <option value="risk">Sort: Risk ↓</option>
+          <option value="status">Sort: Status</option>
+          <option value="price">Sort: Price ↓</option>
+          <option value="order">Sort: Order added</option>
+        </select>
+      </div>
+      <ul id="queue-list" class="queue-list"></ul>
+    </aside>
+
+    <section class="detail-pane">
+      <div id="detail-empty" class="detail-empty">
+        Select a pin from the queue.
+      </div>
+      <div id="detail-content" class="detail-content" hidden></div>
+    </section>
+  </div>
+</div>
+<script src="/static/review.js"></script>
+{% endblock %}
