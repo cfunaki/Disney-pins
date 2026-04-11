@@ -128,16 +128,16 @@ async def test_select_match_404_when_pin_not_found(test_app):
 
 
 @pytest.mark.asyncio
-async def test_select_match_404_when_entry_not_a_candidate(test_app):
+async def test_select_match_inserts_new_candidate_when_not_already_present(test_app):
     pin_id = test_app.state.test_pin_id
-    # Seed a third catalog entry that is NOT linked to the pin via CatalogMatch
+    # Seed a third catalog entry that is NOT currently linked to the pin via CatalogMatch
     from src.database import get_db
     override = test_app.dependency_overrides[get_db]
     agen = override()
     session = await agen.__anext__()
     try:
         entry_c = CatalogEntry(
-            canonical_name="Unrelated Pin",
+            canonical_name="Manually Picked Pin",
             franchise="Disney",
             release_year=2020,
             edition_size=250,
@@ -158,8 +158,16 @@ async def test_select_match_404_when_entry_not_a_candidate(test_app):
             f"/api/pins/{pin_id}/match/select",
             json={"catalog_entry_id": entry_c_id},
         )
-    assert response.status_code == 404
-    assert "not a candidate" in response.json()["detail"]
+    assert response.status_code == 200
+    data = response.json()
+    # The new entry should be present as a candidate and marked accepted
+    matches_by_entry = {m["catalog_entry_id"]: m for m in data["catalog_matches"]}
+    assert entry_c_id in matches_by_entry
+    assert matches_by_entry[entry_c_id]["status"] == "accepted"
+    # All other previously-suggested candidates should now be rejected
+    for entry_id, match in matches_by_entry.items():
+        if entry_id != entry_c_id:
+            assert match["status"] == "rejected"
 
 
 @pytest.mark.asyncio
