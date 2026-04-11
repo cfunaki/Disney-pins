@@ -48,12 +48,11 @@ async def test_parser_omits_uncertain_fields():
 
 @pytest.mark.asyncio
 async def test_parser_returns_none_on_unparseable_json():
-    with patch(
-        "src.pipeline.reference_label.client.messages.create",
-        new=AsyncMock(return_value=_fake_response("not json at all")),
-    ):
+    mock = AsyncMock(return_value=_fake_response("not json at all"))
+    with patch("src.pipeline.reference_label.client.messages.create", new=mock):
         result = await parse_listing_label("nonsense title", None)
     assert result is None
+    assert mock.await_count == 1
 
 
 @pytest.mark.asyncio
