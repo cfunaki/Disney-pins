@@ -48,6 +48,7 @@ async def _seed(session, *, accepted_match: bool = False, no_catalog_match: bool
 async def test_regenerate_uses_accepted_match_when_present(db_session):
     pin_id, entry_a_id, _ = await _seed(db_session, accepted_match=True)
     draft = await regenerate_draft_for_pin(db_session, pin_id)
+    await db_session.commit()
     assert draft is not None
     assert "Mickey" in draft.title
     assert "2005" in draft.title
@@ -58,6 +59,7 @@ async def test_regenerate_uses_accepted_match_when_present(db_session):
 async def test_regenerate_falls_back_to_top_match_when_none_accepted(db_session):
     pin_id, entry_a_id, _ = await _seed(db_session, accepted_match=False)
     draft = await regenerate_draft_for_pin(db_session, pin_id)
+    await db_session.commit()
     # Top match (rank 1) should be entry A — release year 2005
     assert "2005" in draft.title
 
@@ -66,6 +68,7 @@ async def test_regenerate_falls_back_to_top_match_when_none_accepted(db_session)
 async def test_regenerate_uses_extraction_only_when_no_catalog_match(db_session):
     pin_id, _, _ = await _seed(db_session, no_catalog_match=True)
     draft = await regenerate_draft_for_pin(db_session, pin_id)
+    await db_session.commit()
     # No catalog match → year comes from extraction (2005), title still mentions Mickey
     assert "Mickey" in draft.title
     assert draft is not None
@@ -82,3 +85,20 @@ async def test_regenerate_replaces_existing_draft(db_session):
     draft = await regenerate_draft_for_pin(db_session, pin_id)
     assert draft.title != "OLD TITLE"
     assert "Mickey" in draft.title
+
+
+@pytest.mark.asyncio
+async def test_regenerate_ignores_rejected_match_in_fallback(db_session):
+    pin_id, entry_a_id, entry_b_id = await _seed(db_session, accepted_match=False)
+    # Reject the top match (entry A, rank 1)
+    from sqlalchemy import update
+    await db_session.execute(
+        update(CatalogMatch)
+        .where(CatalogMatch.catalog_entry_id == entry_a_id)
+        .values(status=MatchStatus.REJECTED)
+    )
+    await db_session.commit()
+    draft = await regenerate_draft_for_pin(db_session, pin_id)
+    await db_session.commit()
+    # Should now use entry B (Mickey Halloween, 2010), not the rejected entry A (2005)
+    assert "2010" in draft.title or "Halloween" in draft.title or "2010" in str(draft.item_specifics)
