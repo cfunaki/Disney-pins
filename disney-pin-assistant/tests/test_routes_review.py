@@ -112,3 +112,51 @@ async def test_select_match_404_when_catalog_entry_unknown(test_app):
             json={"catalog_entry_id": 99999},
         )
     assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_select_match_404_when_pin_not_found(test_app):
+    entry_a_id = test_app.state.test_entry_a_id
+    transport = ASGITransport(app=test_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/pins/99999/match/select",
+            json={"catalog_entry_id": entry_a_id},
+        )
+    assert response.status_code == 404
+    assert "Pin not found" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_select_match_404_when_entry_not_a_candidate(test_app):
+    pin_id = test_app.state.test_pin_id
+    # Seed a third catalog entry that is NOT linked to the pin via CatalogMatch
+    from src.database import get_db
+    override = test_app.dependency_overrides[get_db]
+    agen = override()
+    session = await agen.__anext__()
+    try:
+        entry_c = CatalogEntry(
+            canonical_name="Unrelated Pin",
+            franchise="Disney",
+            release_year=2020,
+            edition_size=250,
+            source="pintradingdb",
+        )
+        session.add(entry_c)
+        await session.commit()
+        entry_c_id = entry_c.id
+    finally:
+        try:
+            await agen.__anext__()
+        except StopAsyncIteration:
+            pass
+
+    transport = ASGITransport(app=test_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            f"/api/pins/{pin_id}/match/select",
+            json={"catalog_entry_id": entry_c_id},
+        )
+    assert response.status_code == 404
+    assert "not a candidate" in response.json()["detail"]
