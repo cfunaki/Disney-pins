@@ -186,7 +186,7 @@ function renderQueueList() {
     const price = pin.listing_draft && pin.listing_draft.suggested_price
       ? `$${pin.listing_draft.suggested_price.toFixed(0)}` : "—";
     li.innerHTML = `
-      <img class="queue-thumb" src="${pinThumbnail(pin)}" alt="">
+      <img class="queue-thumb" src="${escapeHtml(pinThumbnail(pin))}" alt="">
       <div class="queue-row-body">
         <div class="queue-title">${escapeHtml(pinTitle(pin))}</div>
         <div class="queue-meta">
@@ -341,7 +341,8 @@ function wireMatchSection(pin) {
   const container = document.getElementById("detail-content");
   container.querySelectorAll(".candidate-card").forEach((card) => {
     card.addEventListener("click", () => {
-      const id = parseInt(card.dataset.catalogEntryId, 10);
+      const id = Number(card.dataset.catalogEntryId);
+      if (!Number.isInteger(id)) return;
       container.querySelectorAll(".candidate-card").forEach((c) => c.classList.remove("selected"));
       card.classList.add("selected");
       const match = pin.catalog_matches.find((m) => m.catalog_entry_id === id);
@@ -393,11 +394,8 @@ function wireMatchSection(pin) {
         if (!approveResp.ok) {
           throw new Error(`Approve failed: ${approveResp.status}`);
         }
-        await loadBatch();
-        if (state.selectedPinId != null) {
-          const current = state.pins.find((p) => p.id === state.selectedPinId);
-          if (current) renderDetail(current);
-        }
+        const updated = await approveResp.json();
+        replacePinInStateAndRender(updated);
       } catch (err) {
         console.error("approve failed:", err);
         container.querySelectorAll(".detail-error").forEach((el) => el.remove());
@@ -424,7 +422,12 @@ function wireMatchSection(pin) {
         if (!resp.ok) {
           throw new Error(`Skip failed: ${resp.status}`);
         }
-        await loadBatch();
+        const updated = await resp.json();
+        replacePinInStateAndRender(updated);
+        const sorted = sortedFilteredPins();
+        const idx = sorted.findIndex((p) => p.id === pin.id);
+        const next = sorted[idx + 1] || sorted[idx - 1];
+        if (next && next.id !== pin.id) selectPin(next.id);
       } catch (err) {
         console.error("skip failed:", err);
         container.querySelectorAll(".detail-error").forEach((el) => el.remove());
@@ -449,7 +452,7 @@ function wireMatchSection(pin) {
       btn.disabled = true;
       try {
         if (action === "accept") {
-          let catalogEntryId = parseInt(container.dataset.visualSelectedId, 10);
+          let catalogEntryId = Number(container.dataset.visualSelectedId);
           if (!Number.isInteger(catalogEntryId)) {
             const matches = (pin.catalog_matches || []).slice().sort((a, b) => b.match_confidence - a.match_confidence);
             catalogEntryId = matches.length > 0 ? matches[0].catalog_entry_id : null;
@@ -581,7 +584,7 @@ async function runCatalogSearch(append) {
           closeCatalogSearchModal();
           return;
         }
-        const entryId = parseInt(btn.dataset.entryId, 10);
+        const entryId = Number(btn.dataset.entryId);
         if (!Number.isInteger(entryId)) return;
         btn.disabled = true;
         const originalText = btn.textContent;

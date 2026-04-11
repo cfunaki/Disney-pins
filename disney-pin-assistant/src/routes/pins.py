@@ -58,16 +58,17 @@ async def approve_pin(pin_id: int, db: AsyncSession = Depends(get_db)):
     if draft:
         draft.export_status = ExportStatus.APPROVED
     await db.commit()
-    return {"id": pin.id, "status": pin.status.value}
+    return await _load_pin_detail(pin_id, db)
 
 @router.post("/pins/{pin_id}/skip")
 async def skip_pin(pin_id: int, db: AsyncSession = Depends(get_db)):
     pin = await db.get(Pin, pin_id)
     if not pin:
         raise HTTPException(status_code=404, detail="Pin not found")
-    pin.seller_notes = (pin.seller_notes or "") + " [SKIPPED]"
+    if "[SKIPPED]" not in (pin.seller_notes or ""):
+        pin.seller_notes = (pin.seller_notes or "") + " [SKIPPED]"
     await db.commit()
-    return {"id": pin.id, "status": pin.status.value, "skipped": True}
+    return await _load_pin_detail(pin_id, db)
 
 @router.patch("/pins/{pin_id}")
 async def update_pin(pin_id: int, update: PinUpdateRequest, db: AsyncSession = Depends(get_db)):
