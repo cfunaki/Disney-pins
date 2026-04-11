@@ -298,6 +298,127 @@ function wireMatchSection(pin) {
       container.dataset.visualSelectedId = id;
     });
   });
+
+  const detailContent = document.getElementById("detail-content");
+
+  const approveBtn = container.querySelector('[data-action="approve"]');
+  if (approveBtn) {
+    approveBtn.addEventListener("click", async () => {
+      approveBtn.disabled = true;
+      approveBtn.textContent = "Approving…";
+      try {
+        const draftBody = collectDraftFields(container);
+        const patchResp = await fetch(`/api/pins/${pin.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(draftBody),
+        });
+        if (!patchResp.ok) {
+          throw new Error(`Draft save failed: ${patchResp.status}`);
+        }
+        const approveResp = await fetch(`/api/pins/${pin.id}/approve`, {
+          method: "POST",
+        });
+        if (!approveResp.ok) {
+          throw new Error(`Approve failed: ${approveResp.status}`);
+        }
+        await loadBatch();
+        if (state.selectedPinId != null) {
+          const current = state.pins.find((p) => p.id === state.selectedPinId);
+          if (current) renderDetail(current);
+        }
+      } catch (err) {
+        console.error("approve failed:", err);
+        detailContent.querySelectorAll(".detail-error").forEach((el) => el.remove());
+        const errorEl = document.createElement("div");
+        errorEl.className = "detail-error";
+        errorEl.textContent = "Approve failed. Please try again.";
+        detailContent.prepend(errorEl);
+      } finally {
+        approveBtn.disabled = false;
+        approveBtn.textContent = "Approve";
+      }
+    });
+  }
+
+  const skipBtn = container.querySelector('[data-action="skip"]');
+  if (skipBtn) {
+    skipBtn.addEventListener("click", async () => {
+      skipBtn.disabled = true;
+      skipBtn.textContent = "Skipping…";
+      try {
+        const resp = await fetch(`/api/pins/${pin.id}/skip`, {
+          method: "POST",
+        });
+        if (!resp.ok) {
+          throw new Error(`Skip failed: ${resp.status}`);
+        }
+        await loadBatch();
+      } catch (err) {
+        console.error("skip failed:", err);
+        detailContent.querySelectorAll(".detail-error").forEach((el) => el.remove());
+        const errorEl = document.createElement("div");
+        errorEl.className = "detail-error";
+        errorEl.textContent = "Skip failed. Please try again.";
+        detailContent.prepend(errorEl);
+      } finally {
+        skipBtn.disabled = false;
+        skipBtn.textContent = "Skip";
+      }
+    });
+  }
+
+  container.querySelectorAll(".match-actions [data-match-action]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const action = btn.dataset.matchAction;
+      if (action === "search") {
+        openCatalogSearchModal(pin);
+        return;
+      }
+      btn.disabled = true;
+      try {
+        if (action === "accept") {
+          let catalogEntryId = parseInt(container.dataset.visualSelectedId, 10);
+          if (!Number.isInteger(catalogEntryId)) {
+            const matches = (pin.catalog_matches || []).slice().sort((a, b) => b.match_confidence - a.match_confidence);
+            catalogEntryId = matches.length > 0 ? matches[0].catalog_entry_id : null;
+          }
+          const resp = await fetch(`/api/pins/${pin.id}/match/select`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ catalog_entry_id: catalogEntryId }),
+          });
+          if (!resp.ok) {
+            throw new Error(`Accept failed: ${resp.status}`);
+          }
+          const updated = await resp.json();
+          replacePinInStateAndRender(updated);
+        } else if (action === "none") {
+          const resp = await fetch(`/api/pins/${pin.id}/match/none`, {
+            method: "POST",
+          });
+          if (!resp.ok) {
+            throw new Error(`Mark no-match failed: ${resp.status}`);
+          }
+          const updated = await resp.json();
+          replacePinInStateAndRender(updated);
+        }
+      } catch (err) {
+        console.error(`match action ${action} failed:`, err);
+        detailContent.querySelectorAll(".detail-error").forEach((el) => el.remove());
+        const errorEl = document.createElement("div");
+        errorEl.className = "detail-error";
+        errorEl.textContent = action === "accept" ? "Accept failed. Please try again." : "Mark no-match failed. Please try again.";
+        detailContent.prepend(errorEl);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  });
+}
+
+function openCatalogSearchModal(pin) {
+  alert("Catalog search modal not yet implemented.");
 }
 
 function renderExtractionSection(pin) {
