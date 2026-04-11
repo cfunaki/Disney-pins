@@ -128,6 +128,24 @@ async def select_match(pin_id: int, body: MatchSelectRequest, db: AsyncSession =
     # Return the fresh pin dict (pin already known to exist)
     return await _load_pin_detail(pin_id, db)
 
+@router.post("/pins/{pin_id}/match/none")
+async def mark_no_match(pin_id: int, db: AsyncSession = Depends(get_db)):
+    pin = await db.get(Pin, pin_id)
+    if not pin:
+        raise HTTPException(status_code=404, detail="Pin not found")
+
+    result = await db.execute(select(CatalogMatch).where(CatalogMatch.pin_id == pin_id))
+    matches = result.scalars().all()
+    for m in matches:
+        m.status = MatchStatus.REJECTED
+
+    pin.no_catalog_match = True
+
+    await regenerate_draft_for_pin(db, pin_id)
+    await db.commit()
+
+    return await _load_pin_detail(pin_id, db)
+
 def _serialize_pin(pin: Pin) -> dict:
     """Serialize a Pin to the wire format with computed risk badge."""
     data = _pin_to_dict(pin)
