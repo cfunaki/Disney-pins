@@ -227,6 +227,7 @@ function renderDetail(pin) {
     <div class="detail-section" id="match-section">${renderMatchSection(pin)}</div>
     <div class="detail-section" id="extraction-section">${renderExtractionSection(pin)}</div>
     <div class="detail-section" id="draft-section">${renderDraftSection(pin)}</div>
+    ${renderReferenceLabel(pin)}
   `;
   _applyBackgrounds(container);
   wireMatchSection(pin);
@@ -878,6 +879,176 @@ function replacePinInStateAndRender(pin) {
 function escapeHtml(s) {
   if (s == null) return "";
   return String(s).replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+}
+
+// ── Reference label diff overlay ───────────────────────────────────
+// Mirrors src/pipeline/reference_diff.py. Field list and comparator rules
+// MUST stay in sync with that module.
+
+const REFERENCE_GRADED_FIELDS = [
+  "characters",
+  "franchise",
+  "canonical_name",
+  "series_or_collection",
+  "release_year",
+  "edition_size",
+  "is_limited_edition",
+];
+
+const REFERENCE_UNGRADED_FIELDS = [
+  "event",
+  "pin_type",
+  "exclusive_source",
+];
+
+const REFERENCE_ALL_FIELDS = [
+  ...REFERENCE_GRADED_FIELDS,
+  ...REFERENCE_UNGRADED_FIELDS,
+];
+
+const REFERENCE_FIELD_LABELS = {
+  characters: "Characters",
+  franchise: "Franchise",
+  canonical_name: "Canonical name",
+  series_or_collection: "Series",
+  release_year: "Year",
+  edition_size: "Edition size",
+  is_limited_edition: "LE flag",
+  event: "Event",
+  pin_type: "Pin type",
+  exclusive_source: "Exclusive source",
+};
+
+function _refPresent(value) {
+  if (value === null || value === undefined) return false;
+  if (Array.isArray(value) && value.length === 0) return false;
+  if (typeof value === "string" && value.trim() === "") return false;
+  return true;
+}
+
+function _refNormList(value) {
+  if (!Array.isArray(value)) return new Set();
+  return new Set(
+    value
+      .map((v) => String(v).trim().toLowerCase())
+      .filter((v) => v.length > 0),
+  );
+}
+
+function _refSetsEqual(a, b) {
+  if (a.size !== b.size) return false;
+  for (const x of a) if (!b.has(x)) return false;
+  return true;
+}
+
+function _refCompareField(field, tool, reference) {
+  if (field === "characters") {
+    return _refSetsEqual(_refNormList(tool), _refNormList(reference)) ? "agree" : "mismatch";
+  }
+  if (["franchise", "canonical_name", "series_or_collection", "event", "pin_type", "exclusive_source"].includes(field)) {
+    const a = String(tool).trim().toLowerCase();
+    const b = String(reference).trim().toLowerCase();
+    if (a === b || a.includes(b) || b.includes(a)) return "agree";
+    return "mismatch";
+  }
+  // release_year, edition_size, is_limited_edition
+  return tool === reference ? "agree" : "mismatch";
+}
+
+function diffReferenceFields(tool, reference) {
+  const out = {};
+  for (const field of REFERENCE_ALL_FIELDS) {
+    const t = tool[field];
+    const r = reference[field];
+    const tP = _refPresent(t);
+    const rP = _refPresent(r);
+    let status;
+    if (!tP && !rP) {
+      status = "muted";
+    } else if (tP !== rP) {
+      status = "one_side_only";
+    } else {
+      status = _refCompareField(field, t, r);
+    }
+    out[field] = { field, status, tool: t, reference: r };
+  }
+  return out;
+}
+
+function _flattenToolSide(pin) {
+  const extraction = pin.extraction || {};
+  const topMatch = (pin.catalog_matches || [])
+    .slice()
+    .sort((a, b) => b.match_confidence - a.match_confidence)[0];
+  const entry = topMatch || {};
+  return {
+    characters: extraction.characters || [],
+    franchise: extraction.franchise || null,
+    canonical_name: pin.no_catalog_match ? null : (entry.canonical_name || null),
+    series_or_collection: pin.no_catalog_match ? null : (entry.series_or_collection || null),
+    release_year: pin.no_catalog_match ? null : (entry.release_year ?? null),
+    edition_size: pin.no_catalog_match ? null : (entry.edition_size ?? null),
+    is_limited_edition: extraction.edition_size != null ? true : null,
+    event: null,
+    pin_type: extraction.pin_type || null,
+    exclusive_source: null,
+  };
+}
+
+function _formatRefValue(value) {
+  if (value === null || value === undefined) return "—";
+  if (Array.isArray(value)) return value.join(", ");
+  if (typeof value === "boolean") return value ? "yes" : "no";
+  return String(value);
+}
+
+const _REF_STATUS_ICON = {
+  agree: "✓",
+  mismatch: "✗",
+  one_side_only: "⚠",
+  muted: "·",
+};
+
+function renderReferenceLabel(pin) {
+  if (!pin.reference_source) return "";
+
+  const parsed = pin.reference_parsed_fields || {};
+  const tool = _flattenToolSide(pin);
+  const diff = diffReferenceFields(tool, parsed);
+
+  const hasMismatch = Object.values(diff).some((d) => d.status === "mismatch");
+  const openAttr = hasMismatch ? " open" : "";
+  const rawTitle = pin.reference_raw_title || "";
+  const ebayLink = pin.reference_url
+    ? `<a class="ref-ebay-link" href="${escapeHtml(pin.reference_url)}" target="_blank" rel="noopener">↗ eBay</a>`
+    : "";
+
+  const rows = REFERENCE_ALL_FIELDS.map((field) => {
+    const d = diff[field];
+    const cls = `diff-row diff-${d.status.replace("_", "-")}`;
+    const icon = _REF_STATUS_ICON[d.status];
+    return `
+      <tr class="${cls}">
+        <th>${escapeHtml(REFERENCE_FIELD_LABELS[field])}</th>
+        <td>${escapeHtml(_formatRefValue(d.reference))}</td>
+        <td><span class="diff-status diff-${d.status.replace("_", "-")}">${icon}</span>${escapeHtml(_formatRefValue(d.tool))}</td>
+      </tr>`;
+  }).join("");
+
+  return `
+    <details class="reference-section"${openAttr}>
+      <summary>
+        <span>Reference label (${escapeHtml(pin.reference_source)})</span>
+        ${ebayLink}
+      </summary>
+      <div class="reference-raw-title">"${escapeHtml(rawTitle)}"</div>
+      <table class="reference-diff-table">
+        <thead>
+          <tr><th></th><th>Parsed reference</th><th>Tool extraction</th></tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </details>`;
 }
 
 init();
