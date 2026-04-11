@@ -74,6 +74,13 @@ class Pin(Base):
     seller_notes = Column(Text, nullable=True)
     image_paths = Column(JSON, default=list)
     no_catalog_match = Column(Boolean, default=False, server_default="0", nullable=False)
+    reference_source = Column(String(50), nullable=True)
+    reference_external_id = Column(String(100), nullable=True)
+    reference_url = Column(String(500), nullable=True)
+    reference_raw_title = Column(Text, nullable=True)
+    reference_raw_description = Column(Text, nullable=True)
+    reference_parsed_fields = Column(JSON, nullable=True)
+    reference_ingested_at = Column(String, nullable=True)
     created_at = Column(String, default=lambda: _utcnow().isoformat())
     updated_at = Column(String, default=lambda: _utcnow().isoformat(), onupdate=lambda: _utcnow().isoformat())
 
