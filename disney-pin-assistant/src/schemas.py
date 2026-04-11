@@ -98,3 +98,16 @@ class BatchProgressResponse(BaseModel):
     total: int
     processed: int
     status_counts: dict[str, int]
+
+
+class MatchSelectRequest(BaseModel):
+    catalog_entry_id: int
+
+
+class ExtractionPatchRequest(BaseModel):
+    characters: list[str] | None = None
+    franchise: str | None = None
+    pin_type: str | None = None
+    edition_size: int | None = None
+    visible_dates: str | None = None
+    event_clues: str | None = None
