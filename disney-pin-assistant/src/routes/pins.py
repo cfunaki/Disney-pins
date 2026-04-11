@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from src.database import get_db
@@ -195,7 +195,9 @@ async def rematch_pin(pin_id: int, db: AsyncSession = Depends(get_db)):
         if pin.image_paths:
             query_embedding = compute_clip_embedding(pin.image_paths[0])
     except Exception as exc:
+        import traceback
         print(f"[rematch] CLIP embedding failed for pin {pin_id}: {exc}")
+        traceback.print_exc()
 
     new_matches = await find_catalog_matches_hybrid(
         db, extraction_dict,
@@ -203,9 +205,8 @@ async def rematch_pin(pin_id: int, db: AsyncSession = Depends(get_db)):
         max_results=5,
     )
 
-    existing = await db.execute(select(CatalogMatch).where(CatalogMatch.pin_id == pin_id))
-    for old in existing.scalars().all():
-        await db.delete(old)
+    await db.execute(delete(CatalogMatch).where(CatalogMatch.pin_id == pin_id))
+    await db.flush()
 
     for rank, match in enumerate(new_matches, 1):
         cm = CatalogMatch(
