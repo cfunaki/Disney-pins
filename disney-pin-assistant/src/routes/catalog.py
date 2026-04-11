@@ -109,7 +109,28 @@ async def import_catalog_json(file: UploadFile = File(...), db: AsyncSession = D
     return {"imported": count, "skipped": skipped}
 
 @router.get("/search")
-async def search_catalog(q: str, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(CatalogEntry).where(CatalogEntry.canonical_name.ilike(f"%{q}%")).limit(20))
+async def search_catalog(q: str, offset: int = 0, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(CatalogEntry)
+        .where(CatalogEntry.canonical_name.ilike(f"%{q}%"))
+        .order_by(CatalogEntry.canonical_name.asc())
+        .offset(offset)
+        .limit(20)
+    )
     entries = result.scalars().all()
-    return [{"id": e.id, "canonical_name": e.canonical_name, "characters": e.characters, "franchise": e.franchise, "event": e.event, "edition_size": e.edition_size, "pin_type": e.pin_type, "evidence_strength": e.evidence_strength} for e in entries]
+    return [
+        {
+            "id": e.id,
+            "canonical_name": e.canonical_name,
+            "characters": e.characters,
+            "franchise": e.franchise,
+            "event": e.event,
+            "edition_size": e.edition_size,
+            "pin_type": e.pin_type,
+            "evidence_strength": e.evidence_strength,
+            "image_path": e.image_path,
+            "release_year": e.release_year,
+            "source": e.source,
+        }
+        for e in entries
+    ]
