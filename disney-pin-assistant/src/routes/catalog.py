@@ -113,7 +113,7 @@ async def search_catalog(q: str, offset: int = 0, db: AsyncSession = Depends(get
     result = await db.execute(
         select(CatalogEntry)
         .where(CatalogEntry.canonical_name.ilike(f"%{q}%"))
-        .order_by(CatalogEntry.canonical_name.asc())
+        .order_by(CatalogEntry.canonical_name.asc(), CatalogEntry.id.asc())
         .offset(offset)
         .limit(20)
     )
