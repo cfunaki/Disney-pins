@@ -160,3 +160,27 @@ async def test_select_match_404_when_entry_not_a_candidate(test_app):
         )
     assert response.status_code == 404
     assert "not a candidate" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_match_none_sets_no_catalog_match_and_rejects_all(test_app):
+    pin_id = test_app.state.test_pin_id
+    transport = ASGITransport(app=test_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(f"/api/pins/{pin_id}/match/none")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["no_catalog_match"] is True
+    assert all(m["status"] == "rejected" for m in data["catalog_matches"])
+
+
+@pytest.mark.asyncio
+async def test_match_none_regenerates_draft_from_extraction(test_app):
+    pin_id = test_app.state.test_pin_id
+    transport = ASGITransport(app=test_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(f"/api/pins/{pin_id}/match/none")
+    data = response.json()
+    assert data["listing_draft"]["title"] != "OLD TITLE"
+    # Title should still mention Mickey because the extraction still has it
+    assert "Mickey" in data["listing_draft"]["title"]
