@@ -10,7 +10,7 @@ from src.models import (
 from src.pipeline.listing import generate_listing_draft
 
 
-def _extraction_to_dict(extraction: VisionExtraction) -> dict:
+def extraction_to_dict(extraction: VisionExtraction) -> dict:
     return {
         "characters": extraction.characters or [],
         "franchise": extraction.franchise,
@@ -86,7 +86,7 @@ async def regenerate_draft_for_pin(db: AsyncSession, pin_id: int) -> ListingDraf
     if not extraction:
         return None
 
-    extraction_dict = _extraction_to_dict(extraction)
+    extraction_dict = extraction_to_dict(extraction)
     entry = await _resolve_match_entry(db, pin_id, pin.no_catalog_match)
     catalog_match_dict = _catalog_entry_to_match_dict(entry) if entry else None
 

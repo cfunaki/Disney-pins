@@ -263,3 +263,87 @@ async def test_patch_extraction_404_when_extraction_missing(test_app):
         )
     assert response.status_code == 404
     assert "Extraction not found for pin" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_rematch_replaces_existing_candidates(test_app, monkeypatch):
+    """Re-match should delete old CatalogMatch rows and insert fresh ones."""
+    pin_id = test_app.state.test_pin_id
+
+    async def fake_find(db, extraction, query_embedding=None, max_results=5):
+        return [
+            {
+                "catalog_entry_id": test_app.state.test_entry_b_id,
+                "canonical_name": "Mickey Halloween 2010",
+                "confidence": 0.77,
+                "visual_similarity": 0.77,
+                "reasoning": "stubbed",
+            }
+        ]
+    monkeypatch.setattr("src.routes.pins.find_catalog_matches_hybrid", fake_find)
+
+    transport = ASGITransport(app=test_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(f"/api/pins/{pin_id}/rematch")
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["catalog_matches"]) == 1
+    assert data["catalog_matches"][0]["canonical_name"] == "Mickey Halloween 2010"
+
+
+@pytest.mark.asyncio
+async def test_rematch_does_not_regenerate_draft(test_app, monkeypatch):
+    pin_id = test_app.state.test_pin_id
+
+    async def fake_find(db, extraction, query_embedding=None, max_results=5):
+        return []
+    monkeypatch.setattr("src.routes.pins.find_catalog_matches_hybrid", fake_find)
+
+    transport = ASGITransport(app=test_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(f"/api/pins/{pin_id}/rematch")
+    data = response.json()
+    assert data["listing_draft"]["title"] == "OLD TITLE"
+
+
+@pytest.mark.asyncio
+async def test_rematch_404_when_pin_not_found(test_app, monkeypatch):
+    async def fake_find(db, extraction, query_embedding=None, max_results=5):
+        return []
+    monkeypatch.setattr("src.routes.pins.find_catalog_matches_hybrid", fake_find)
+
+    transport = ASGITransport(app=test_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post("/api/pins/99999/rematch")
+    assert response.status_code == 404
+    assert "Pin not found" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_rematch_404_when_extraction_missing(test_app, monkeypatch):
+    async def fake_find(db, extraction, query_embedding=None, max_results=5):
+        return []
+    monkeypatch.setattr("src.routes.pins.find_catalog_matches_hybrid", fake_find)
+
+    # Create a bare pin without an extraction, using the session-access pattern
+    # already established in test_patch_extraction_404_when_extraction_missing
+    from src.database import get_db
+    override = test_app.dependency_overrides[get_db]
+    agen = override()
+    session = await agen.__anext__()
+    try:
+        bare_pin = Pin(batch_id="b", status=PinStatus.UNPROCESSED, image_paths=[])
+        session.add(bare_pin)
+        await session.commit()
+        bare_pin_id = bare_pin.id
+    finally:
+        try:
+            await agen.__anext__()
+        except StopAsyncIteration:
+            pass
+
+    transport = ASGITransport(app=test_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(f"/api/pins/{bare_pin_id}/rematch")
+    assert response.status_code == 404
+    assert "Extraction not found for pin" in response.json()["detail"]
