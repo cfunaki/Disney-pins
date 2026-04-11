@@ -70,6 +70,35 @@ function init() {
     }
   }
 
+  document.addEventListener("keydown", (e) => {
+    const modalOpen = modal && !modal.hidden;
+    if (e.key === "Escape" && modalOpen) {
+      e.preventDefault();
+      closeCatalogSearchModal();
+      return;
+    }
+    const tag = (e.target && e.target.tagName) || "";
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+    if (modalOpen) return;
+
+    const sorted = sortedFilteredPins();
+    const idx = sorted.findIndex((p) => p.id === state.selectedPinId);
+
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      const next = sorted[Math.min(idx + 1, sorted.length - 1)];
+      if (next) selectPin(next.id);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      const prev = sorted[Math.max(idx - 1, 0)];
+      if (prev) selectPin(prev.id);
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      const approveBtn = document.querySelector('.detail-actions [data-action="approve"]');
+      if (approveBtn) approveBtn.click();
+    }
+  });
+
   loadBatch();
 }
 
