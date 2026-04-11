@@ -310,4 +310,12 @@ def _pin_to_dict(pin: Pin) -> dict:
             "listing_type": comp.listing_type.value,
             "excluded": comp.excluded,
         })
+    if pin.reference_source is not None:
+        data["reference_source"] = pin.reference_source
+        data["reference_external_id"] = pin.reference_external_id
+        data["reference_url"] = pin.reference_url
+        data["reference_raw_title"] = pin.reference_raw_title
+        data["reference_raw_description"] = pin.reference_raw_description
+        data["reference_parsed_fields"] = pin.reference_parsed_fields
+        data["reference_ingested_at"] = pin.reference_ingested_at
     return data
