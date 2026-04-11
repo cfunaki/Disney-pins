@@ -1009,6 +1009,13 @@ const _REF_STATUS_ICON = {
   muted: "·",
 };
 
+const _REF_STATUS_CLASS = {
+  agree: "agree",
+  mismatch: "mismatch",
+  one_side_only: "one-side",
+  muted: "muted",
+};
+
 function renderReferenceLabel(pin) {
   if (!pin.reference_source) return "";
 
@@ -1025,13 +1032,13 @@ function renderReferenceLabel(pin) {
 
   const rows = REFERENCE_ALL_FIELDS.map((field) => {
     const d = diff[field];
-    const cls = `diff-row diff-${d.status.replace("_", "-")}`;
+    const cls = `diff-row diff-${_REF_STATUS_CLASS[d.status]}`;
     const icon = _REF_STATUS_ICON[d.status];
     return `
       <tr class="${cls}">
         <th>${escapeHtml(REFERENCE_FIELD_LABELS[field])}</th>
         <td>${escapeHtml(_formatRefValue(d.reference))}</td>
-        <td><span class="diff-status diff-${d.status.replace("_", "-")}">${icon}</span>${escapeHtml(_formatRefValue(d.tool))}</td>
+        <td><span class="diff-status diff-${_REF_STATUS_CLASS[d.status]}">${icon}</span>${escapeHtml(_formatRefValue(d.tool))}</td>
       </tr>`;
   }).join("");
 
