@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from src.database import get_db
 from src.models import Pin, PinStatus, ListingDraft, ExportStatus, CatalogMatch, CatalogEntry, MatchStatus
-from src.schemas import PinUpdateRequest, MatchSelectRequest, ExtractionPatchRequest
+from src.schemas import PinUpdateRequest, MatchSelectRequest
 from src.pipeline.draft_regeneration import regenerate_draft_for_pin
 from src.pipeline.risk_badges import classify_pin_risk
 
@@ -23,8 +23,8 @@ async def list_batch_pins(batch_id: str, db: AsyncSession = Depends(get_db)):
     pins = result.scalars().all()
     return [_serialize_pin(pin) for pin in pins]
 
-@router.get("/pins/{pin_id}")
-async def get_pin_detail(pin_id: int, db: AsyncSession = Depends(get_db)):
+async def _load_pin_detail(pin_id: int, db: AsyncSession) -> dict | None:
+    """Load a pin with all relations eagerly loaded and return the serialized dict, or None if missing."""
     result = await db.execute(
         select(Pin).options(
             selectinload(Pin.extraction),
@@ -35,8 +35,15 @@ async def get_pin_detail(pin_id: int, db: AsyncSession = Depends(get_db)):
     )
     pin = result.scalar_one_or_none()
     if not pin:
-        raise HTTPException(status_code=404, detail="Pin not found")
+        return None
     return _serialize_pin(pin)
+
+@router.get("/pins/{pin_id}")
+async def get_pin_detail(pin_id: int, db: AsyncSession = Depends(get_db)):
+    data = await _load_pin_detail(pin_id, db)
+    if data is None:
+        raise HTTPException(status_code=404, detail="Pin not found")
+    return data
 
 @router.post("/pins/{pin_id}/approve")
 async def approve_pin(pin_id: int, db: AsyncSession = Depends(get_db)):
@@ -118,8 +125,8 @@ async def select_match(pin_id: int, body: MatchSelectRequest, db: AsyncSession =
     await regenerate_draft_for_pin(db, pin_id)
     await db.commit()
 
-    # Return the fresh pin dict
-    return await get_pin_detail(pin_id, db)
+    # Return the fresh pin dict (pin already known to exist)
+    return await _load_pin_detail(pin_id, db)
 
 def _serialize_pin(pin: Pin) -> dict:
     """Serialize a Pin to the wire format with computed risk badge."""
