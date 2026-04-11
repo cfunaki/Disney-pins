@@ -72,6 +72,19 @@ function _uploadsUrl(imagePath) {
   return match ? `/uploads/${match[1]}` : "";
 }
 
+function _sanitizeCssUrl(url) {
+  if (!url) return "";
+  if (/['"()\\\s<>]/.test(url)) return "";
+  return url;
+}
+
+function _applyBackgrounds(container) {
+  container.querySelectorAll("[data-bg]").forEach((el) => {
+    const url = _sanitizeCssUrl(el.dataset.bg);
+    if (url) el.style.backgroundImage = `url("${url}")`;
+  });
+}
+
 function pinThumbnail(pin) {
   if (pin.image_paths && pin.image_paths.length > 0) {
     return _uploadsUrl(pin.image_paths[0]);
@@ -153,6 +166,7 @@ function renderDetail(pin) {
     <div class="detail-section" id="extraction-section"><!-- Task 14 --></div>
     <div class="detail-section" id="draft-section"><!-- Task 15 --></div>
   `;
+  _applyBackgrounds(container);
   wireMatchSection(pin);
 }
 
@@ -180,6 +194,7 @@ function riskReason(pin) {
     return `Top two within ${gap}`;
   }
   if (pin.risk_badge === "low_extraction") {
+    if (!pin.extraction || pin.extraction.confidence_score == null) return "";
     return `Vision confidence ${(pin.extraction.confidence_score * 100).toFixed(0)}%`;
   }
   if (pin.risk_badge === "no_match") {
@@ -224,7 +239,7 @@ function renderMatchSection(pin) {
     return `
       <div class="candidate-card${isSelected ? " selected" : ""}${isAccepted ? " accepted" : ""}"
            data-catalog-entry-id="${m.catalog_entry_id}">
-        <div class="candidate-image" style="background-image:url('${catalogPhoto(m)}')">${letter} · ${m.match_confidence.toFixed(2)}${isAccepted ? " ✓" : ""}</div>
+        <div class="candidate-image" data-bg="${escapeHtml(catalogPhoto(m))}">${letter} · ${m.match_confidence.toFixed(2)}${isAccepted ? " ✓" : ""}</div>
         <div class="candidate-name">${escapeHtml(m.canonical_name || "(no name)")}</div>
       </div>`;
   }).join("");
@@ -232,10 +247,10 @@ function renderMatchSection(pin) {
   const selectedHtml = selected ? `
     <div class="compare-pane">
       <div class="compare-label">Selected Catalog Match</div>
-      <div class="compare-image" style="background-image:url('${catalogPhoto(selected)}')"></div>
+      <div class="compare-image" data-bg="${escapeHtml(catalogPhoto(selected))}"></div>
       <div class="compare-meta">
         <strong>${escapeHtml(selected.canonical_name || "")}</strong><br>
-        <span class="muted">${escapeHtml(selected.source || "")} · ${selected.edition_size ? "LE " + selected.edition_size : ""} · ${selected.release_year || ""}</span>
+        <span class="muted">${escapeHtml(selected.source || "")} · ${selected.edition_size ? "LE " + escapeHtml(String(selected.edition_size)) : ""} · ${escapeHtml(String(selected.release_year || ""))}</span>
       </div>
     </div>` : "";
 
@@ -244,7 +259,7 @@ function renderMatchSection(pin) {
     <div class="compare-row">
       <div class="compare-pane">
         <div class="compare-label">Your Photo</div>
-        <div class="compare-image" style="background-image:url('${userPhoto(pin)}')"></div>
+        <div class="compare-image" data-bg="${escapeHtml(userPhoto(pin))}"></div>
       </div>
       ${selectedHtml}
     </div>
@@ -270,10 +285,12 @@ function wireMatchSection(pin) {
         const compareRow = container.querySelector(".compare-row");
         const compareCol = compareRow.querySelectorAll(".compare-pane")[1];
         if (compareCol) {
-          compareCol.querySelector(".compare-image").style.backgroundImage = `url('${catalogPhoto(match)}')`;
+          const bgUrl = _sanitizeCssUrl(catalogPhoto(match));
+          compareCol.querySelector(".compare-image").style.backgroundImage =
+            bgUrl ? `url("${bgUrl}")` : "";
           compareCol.querySelector(".compare-meta").innerHTML =
             `<strong>${escapeHtml(match.canonical_name || "")}</strong><br>` +
-            `<span class="muted">${escapeHtml(match.source || "")} · ${match.edition_size ? "LE " + match.edition_size : ""} · ${match.release_year || ""}</span>`;
+            `<span class="muted">${escapeHtml(match.source || "")} · ${match.edition_size ? "LE " + escapeHtml(String(match.edition_size)) : ""} · ${escapeHtml(String(match.release_year || ""))}</span>`;
         }
       }
       container.dataset.visualSelectedId = id;
