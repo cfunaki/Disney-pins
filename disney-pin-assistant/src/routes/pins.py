@@ -3,8 +3,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from src.database import get_db
-from src.models import Pin, PinStatus, ListingDraft, ExportStatus, CatalogMatch, CatalogEntry, MatchStatus
-from src.schemas import PinUpdateRequest, MatchSelectRequest
+from src.models import Pin, PinStatus, ListingDraft, ExportStatus, CatalogMatch, CatalogEntry, MatchStatus, VisionExtraction
+from src.schemas import PinUpdateRequest, MatchSelectRequest, ExtractionPatchRequest
 from src.pipeline.draft_regeneration import regenerate_draft_for_pin
 from src.pipeline.risk_badges import classify_pin_risk
 
@@ -144,6 +144,33 @@ async def mark_no_match(pin_id: int, db: AsyncSession = Depends(get_db)):
     await regenerate_draft_for_pin(db, pin_id)
     await db.commit()
 
+    return await _load_pin_detail(pin_id, db)
+
+@router.post("/pins/{pin_id}/extraction")
+async def patch_extraction(pin_id: int, body: ExtractionPatchRequest, db: AsyncSession = Depends(get_db)):
+    pin = await db.get(Pin, pin_id)
+    if not pin:
+        raise HTTPException(status_code=404, detail="Pin not found")
+
+    result = await db.execute(select(VisionExtraction).where(VisionExtraction.pin_id == pin_id))
+    extraction = result.scalar_one_or_none()
+    if not extraction:
+        raise HTTPException(status_code=404, detail="Extraction not found for pin")
+
+    if body.characters is not None:
+        extraction.characters = body.characters
+    if body.franchise is not None:
+        extraction.franchise = body.franchise
+    if body.pin_type is not None:
+        extraction.pin_type = body.pin_type
+    if body.edition_size is not None:
+        extraction.edition_size = body.edition_size
+    if body.visible_dates is not None:
+        extraction.visible_dates = body.visible_dates
+    if body.event_clues is not None:
+        extraction.event_clues = body.event_clues
+
+    await db.commit()
     return await _load_pin_detail(pin_id, db)
 
 def _serialize_pin(pin: Pin) -> dict:
