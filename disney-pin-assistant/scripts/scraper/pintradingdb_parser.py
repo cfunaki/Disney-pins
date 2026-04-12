@@ -120,6 +120,10 @@ def parse_pin_detail(html: str, pin_id: str) -> dict:
     # --- Details table ---
     edition_size: int | None = None
     exclusive_source: str | None = None
+    description: str | None = None
+    sku: str | None = None
+    retire_date: str | None = None
+    original_price: str | None = None
 
     details_table = soup.find("table", class_="details_table")
     if details_table:
@@ -142,6 +146,14 @@ def parse_pin_detail(html: str, pin_id: str) -> dict:
                         exclusive_source = ", ".join(a.get_text(strip=True) for a in links) or None
                     else:
                         exclusive_source = value_text or None
+                elif label == "Description":
+                    description = value_text or None
+                elif label == "SKU":
+                    sku = value_text or None
+                elif label == "Retire Date":
+                    retire_date = value_text or None
+                elif label == "Original Price":
+                    original_price = value_text or None
 
     # --- Image URL ---
     reference_image_url = _extract_full_image_url(soup)
@@ -160,6 +172,10 @@ def parse_pin_detail(html: str, pin_id: str) -> dict:
         "source": "pintradingdb",
         "source_reference_id": pin_id,
         "evidence_strength": "high",
+        "description": description,
+        "sku": sku,
+        "retire_date": retire_date,
+        "original_price": original_price,
     }
 
 
