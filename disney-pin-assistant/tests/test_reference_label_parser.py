@@ -47,6 +47,18 @@ async def test_parser_omits_uncertain_fields():
 
 
 @pytest.mark.asyncio
+async def test_parser_strips_markdown_fences():
+    payload = {"characters": ["Goofy"]}
+    fenced = f"```json\n{json.dumps(payload)}\n```"
+    with patch(
+        "src.pipeline.reference_label.client.messages.create",
+        new=AsyncMock(return_value=_fake_response(fenced)),
+    ):
+        result = await parse_listing_label("Goofy pin", None)
+    assert result == payload
+
+
+@pytest.mark.asyncio
 async def test_parser_returns_none_on_unparseable_json():
     mock = AsyncMock(return_value=_fake_response("not json at all"))
     with patch("src.pipeline.reference_label.client.messages.create", new=mock):

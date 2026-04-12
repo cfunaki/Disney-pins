@@ -59,6 +59,8 @@ async def parse_listing_label(title: str, description: str | None = None) -> dic
         raise last_error
 
     raw_text = response.content[0].text.strip()
+    if raw_text.startswith("```"):
+        raw_text = raw_text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
     try:
         return json.loads(raw_text)
     except json.JSONDecodeError:
