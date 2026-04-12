@@ -37,7 +37,7 @@ async def browse_api_search(query: str, filters: str | None = None, limit: int =
 
 
 async def browse_api_seller_search(
-    seller: str, limit: int = 50, offset: int = 0,
+    seller: str, query: str = "disney", limit: int = 50, offset: int = 0,
 ) -> list[dict]:
     """Search active listings by seller username.
 
@@ -46,7 +46,7 @@ async def browse_api_seller_search(
     """
     token = await get_ebay_token()
     params = {
-        "q": "disney pin",
+        "q": query,
         "filter": f"sellers:{{{seller}}}",
         "limit": str(limit),
         "offset": str(offset),
