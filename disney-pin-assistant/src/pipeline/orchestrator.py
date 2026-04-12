@@ -8,6 +8,7 @@ from src.pipeline.matching import find_catalog_matches_hybrid
 from src.pipeline.image_matching import compute_clip_embedding
 from src.pipeline.comps import search_comps, filter_comps
 from src.pipeline.listing import generate_listing_draft, compute_pricing
+from src.pipeline.comp_lookup import lookup_comps_for_pin
 
 async def process_single_pin(session_factory: async_sessionmaker, pin_id: int) -> None:
     try:
@@ -92,6 +93,8 @@ async def _process_single_pin_inner(session_factory: async_sessionmaker, pin_id:
         pin.status = PinStatus.PRICED
         await db.commit()
 
+    await run_comp_lookup_hook(session_factory, pin_id)
+
     async with session_factory() as db:
         pin = await db.get(Pin, pin_id)
         best_match = matches[0] if matches else None
@@ -109,6 +112,14 @@ async def _process_single_pin_inner(session_factory: async_sessionmaker, pin_id:
         )
         db.add(draft)
         await db.commit()
+
+async def run_comp_lookup_hook(session_factory: async_sessionmaker, pin_id: int) -> None:
+    """Best-effort comp lookup trigger. Failures are logged and swallowed."""
+    try:
+        await lookup_comps_for_pin(session_factory, pin_id)
+    except Exception as exc:
+        print(f"[orchestrator] comp lookup failed for pin {pin_id}: {exc}")
+
 
 async def process_batch(session_factory: async_sessionmaker, batch_id: str) -> None:
     async with session_factory() as db:
