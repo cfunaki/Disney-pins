@@ -48,4 +48,4 @@ def test_comp_cache_min_hits_default():
 def test_comp_max_results_per_lookup_default():
     from src.config import Settings
     s = Settings()
-    assert s.comp_max_results_per_lookup == 50
+    assert s.comp_max_results_per_lookup == 60

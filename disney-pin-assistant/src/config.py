@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     comp_recency_half_life_days: int = 90
     comp_min_parsed_fields: int = 2
     comp_cache_min_hits: int = 5
-    comp_max_results_per_lookup: int = 50
+    comp_max_results_per_lookup: int = 60  # RapidAPI only accepts 60/120/240
 
     model_config = {"env_file": ".env"}
 
