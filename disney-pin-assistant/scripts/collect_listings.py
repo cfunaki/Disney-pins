@@ -22,17 +22,21 @@ from sqlalchemy import select
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from sqlalchemy import delete
+
 from src.config import settings
 from src.database import async_session
 from src.models import (
     CollectionJob,
     CollectionJobStatus,
     CollectionJobType,
+    Comp,
     EbayListing,
     EbayListingType,
     Pin,
     PinStatus,
 )
+from src.pipeline.comp_lookup import lookup_comps_for_pin, LookupStatus
 from src.pipeline.reference_label import parse_listing_label
 from src.services.ebay_client import (
     browse_api_item_detail,
@@ -88,6 +92,24 @@ def _extract_price(detail: dict) -> float | None:
 async def _default_session_factory():
     async with async_session() as session:
         yield session
+
+
+def _make_session_factory():
+    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+    engine = create_async_engine(settings.database_url)
+    return async_sessionmaker(engine, expire_on_commit=False)
+
+
+async def run_comps(pin_id: int, refresh: bool) -> None:
+    session_factory = _make_session_factory()
+    if refresh:
+        async with session_factory() as db:
+            await db.execute(delete(Comp).where(Comp.pin_id == pin_id))
+            await db.commit()
+    result = await lookup_comps_for_pin(session_factory, pin_id)
+    print(f"Pin {pin_id}: {result.status.value} — {result.comps_written} comps written")
+    if result.error:
+        print(f"  error: {result.error}")
 
 
 async def run_active_seller(
@@ -559,6 +581,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_promote.add_argument("--seller", default=None)
     p_promote.add_argument("--batch-name", required=True, dest="batch_name")
 
+    # comps
+    p_comps = sub.add_parser("comps", help="Look up sold comps for a single pin")
+    p_comps.add_argument("--pin-id", type=int, required=True)
+    p_comps.add_argument("--refresh", action="store_true",
+                         help="Delete existing comps for this pin before lookup")
+
     return parser
 
 
@@ -601,6 +629,9 @@ def main() -> None:
             batch_name=args.batch_name,
         ))
         print(f"Promote complete: {result}")
+
+    elif args.command == "comps":
+        asyncio.run(run_comps(pin_id=args.pin_id, refresh=args.refresh))
 
 
 if __name__ == "__main__":
