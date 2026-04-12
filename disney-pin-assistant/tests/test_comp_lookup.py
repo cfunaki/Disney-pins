@@ -140,3 +140,105 @@ async def test_lookup_api_failure_marks_job_failed(session_factory):
     async with session_factory() as db:
         jobs = (await db.execute(select(CollectionJob))).scalars().all()
         assert any(j.status == CollectionJobStatus.FAILED for j in jobs)
+
+
+# --- Bug fixes: sale-date parsing + per-listing parsed fields ---
+
+def test_parse_sale_date_iso():
+    from src.pipeline.comp_lookup import _parse_sale_date
+    assert _parse_sale_date("2026-03-10", date(2026, 4, 12)) == date(2026, 3, 10)
+
+
+def test_parse_sale_date_short_month_name():
+    from src.pipeline.comp_lookup import _parse_sale_date
+    assert _parse_sale_date("Mar 10, 2026", date(2026, 4, 12)) == date(2026, 3, 10)
+
+
+def test_parse_sale_date_long_month_name():
+    from src.pipeline.comp_lookup import _parse_sale_date
+    assert _parse_sale_date("March 10, 2026", date(2026, 4, 12)) == date(2026, 3, 10)
+
+
+def test_parse_sale_date_slash():
+    from src.pipeline.comp_lookup import _parse_sale_date
+    assert _parse_sale_date("3/10/2026", date(2026, 4, 12)) == date(2026, 3, 10)
+
+
+def test_parse_sale_date_unknown_falls_back_to_today():
+    from src.pipeline.comp_lookup import _parse_sale_date
+    today = date(2026, 4, 12)
+    assert _parse_sale_date("not a date", today) == today
+
+
+@pytest.mark.asyncio
+async def test_cache_miss_parses_each_listing_title(session_factory, monkeypatch):
+    from src.pipeline.comp_lookup import lookup_comps_for_pin, LookupStatus
+    from src.config import settings
+
+    monkeypatch.setattr(settings, "collection_parse_labels", True)
+
+    pin_id = await _make_pin(session_factory, {
+        "characters": ["Stitch"], "franchise": "Lilo & Stitch", "edition_size": 2000,
+    })
+    fake_response = {
+        "aggregates": {},
+        "products": [
+            {"title": "Stitch pin A", "sale_price": 10.0, "date_sold": "Mar 1, 2026"},
+            {"title": "Stitch pin B", "sale_price": 20.0, "date_sold": "Mar 5, 2026"},
+        ],
+    }
+
+    parse_calls: list[str] = []
+
+    async def fake_parse(title, desc):
+        parse_calls.append(title)
+        return {"characters": ["Stitch"], "franchise": "Lilo & Stitch"}
+
+    with patch(
+        "src.pipeline.comp_lookup.sold_data_client.fetch_sold_listings",
+        new=AsyncMock(return_value=fake_response),
+    ), patch(
+        "src.pipeline.comp_lookup.parse_listing_label", new=fake_parse,
+    ):
+        result = await lookup_comps_for_pin(session_factory, pin_id, today=date(2026, 4, 12))
+
+    assert result.status == LookupStatus.API_CALLED
+    assert parse_calls == ["Stitch pin A", "Stitch pin B"]
+
+    async with session_factory() as db:
+        listings = (await db.execute(select(EbayListing))).scalars().all()
+        assert len(listings) == 2
+        for l in listings:
+            assert l.parsed_fields == {"characters": ["Stitch"], "franchise": "Lilo & Stitch"}
+
+
+@pytest.mark.asyncio
+async def test_parse_labels_disabled_stores_none(session_factory, monkeypatch):
+    from src.pipeline.comp_lookup import lookup_comps_for_pin, LookupStatus
+    from src.config import settings
+
+    monkeypatch.setattr(settings, "collection_parse_labels", False)
+
+    pin_id = await _make_pin(session_factory, {
+        "characters": ["Stitch"], "franchise": "Lilo & Stitch", "edition_size": 2000,
+    })
+    fake_response = {
+        "aggregates": {},
+        "products": [
+            {"title": "Stitch pin A", "sale_price": 10.0, "date_sold": "Mar 1, 2026"},
+        ],
+    }
+    with patch(
+        "src.pipeline.comp_lookup.sold_data_client.fetch_sold_listings",
+        new=AsyncMock(return_value=fake_response),
+    ), patch(
+        "src.pipeline.comp_lookup.parse_listing_label",
+        new=AsyncMock(side_effect=AssertionError("should not be called")),
+    ):
+        result = await lookup_comps_for_pin(session_factory, pin_id, today=date(2026, 4, 12))
+
+    assert result.status == LookupStatus.API_CALLED
+    async with session_factory() as db:
+        listings = (await db.execute(select(EbayListing))).scalars().all()
+        assert len(listings) == 1
+        assert listings[0].parsed_fields is None

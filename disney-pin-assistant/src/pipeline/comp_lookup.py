@@ -10,7 +10,7 @@ Flow:
 """
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from enum import Enum
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -22,7 +22,11 @@ from src.models import (
     CompLookupBudget,
 )
 from src.pipeline.comp_scoring import field_overlap_score, score_comp
+from src.pipeline.reference_label import parse_listing_label
 from src.services import sold_data_client
+
+# Date formats observed from RapidAPI responses, in priority order.
+_SALE_DATE_FORMATS = ("%Y-%m-%d", "%b %d, %Y", "%B %d, %Y", "%m/%d/%Y")
 
 
 class LookupStatus(str, Enum):
@@ -74,12 +78,20 @@ def _build_query(parsed: dict) -> str:
 
 
 def _parse_sale_date(raw: str | None, today: date) -> date:
+    """Parse a sale-date string from varied sources. Falls back to `today`.
+
+    Handles ISO ("2026-03-10"), US month-name ("Mar 10, 2026" /
+    "March 10, 2026"), and slash ("3/10/2026") formats.
+    """
     if not raw:
         return today
-    try:
-        return date.fromisoformat(raw[:10])
-    except (ValueError, TypeError):
-        return today
+    s = raw.strip()
+    for fmt in _SALE_DATE_FORMATS:
+        try:
+            return datetime.strptime(s, fmt).date()
+        except ValueError:
+            continue
+    return today
 
 
 async def _get_or_create_budget(db, today: date) -> CompLookupBudget:
@@ -159,13 +171,28 @@ async def lookup_comps_for_pin(
             await db.commit()
         return LookupResult(status=LookupStatus.FAILED, error=str(exc))
 
+    # Pre-parse each listing's title so the ebay_listings cache is enriched
+    # with the listing's OWN parsed fields, not the querying pin's. This is what
+    # makes the cache useful across future pin lookups.
+    parsed_products: list[tuple[dict, dict | None]] = []
+    for product in response.get("products", []):
+        title = product.get("title") or ""
+        price_raw = product.get("sale_price") or product.get("price")
+        if not title or price_raw is None:
+            continue
+        listing_fields: dict | None = None
+        if settings.collection_parse_labels:
+            try:
+                listing_fields = await parse_listing_label(title, None)
+            except Exception:
+                listing_fields = None
+        parsed_products.append((product, listing_fields))
+
     new_listings: list[EbayListing] = []
     async with session_factory() as db:
-        for product in response.get("products", []):
+        for product, listing_fields in parsed_products:
             title = product.get("title") or ""
             price_raw = product.get("sale_price") or product.get("price")
-            if not title or price_raw is None:
-                continue
             try:
                 price = float(price_raw)
             except (ValueError, TypeError):
@@ -176,7 +203,7 @@ async def lookup_comps_for_pin(
                 title=title, price=price,
                 sale_date=sale_date_raw,
                 listing_url=product.get("link"),
-                parsed_fields=parsed,
+                parsed_fields=listing_fields,
                 collection_job_id=job_id,
             )
             db.add(listing)
