@@ -1,0 +1,88 @@
+<h2>Extraction Edit + Listing Draft Sections</h2>
+<p class="subtitle">Below the match review. Both sections are inline-editable; saves cascade to a re-match (extraction) or just persist (draft).</p>
+
+<div class="mockup">
+  <div class="mockup-header">Pin #142 · Extraction & Draft</div>
+  <div class="mockup-body" style="padding:1rem">
+
+    <!-- Extraction section -->
+    <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;color:#888;margin-bottom:0.4rem">Section 2 · Vision Extraction</div>
+    <div style="border:1px solid #eee;border-radius:6px;padding:0.8rem;background:#fafafa">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.6rem 1rem;font-size:0.8rem">
+        <div>
+          <label style="font-size:0.7rem;color:#888;display:block">Characters</label>
+          <input class="mock-input" value="Mickey Mouse" style="width:100%;font-size:0.8rem;padding:0.3rem 0.5rem">
+        </div>
+        <div>
+          <label style="font-size:0.7rem;color:#888;display:block">Franchise</label>
+          <input class="mock-input" value="Disney Classics" style="width:100%;font-size:0.8rem;padding:0.3rem 0.5rem">
+        </div>
+        <div>
+          <label style="font-size:0.7rem;color:#888;display:block">Pin Type</label>
+          <input class="mock-input" value="Limited Edition" style="width:100%;font-size:0.8rem;padding:0.3rem 0.5rem">
+        </div>
+        <div>
+          <label style="font-size:0.7rem;color:#888;display:block">Edition Size</label>
+          <input class="mock-input" value="1500" style="width:100%;font-size:0.8rem;padding:0.3rem 0.5rem">
+        </div>
+        <div>
+          <label style="font-size:0.7rem;color:#888;display:block">Visible Dates</label>
+          <input class="mock-input" value="2005" style="width:100%;font-size:0.8rem;padding:0.3rem 0.5rem">
+        </div>
+        <div>
+          <label style="font-size:0.7rem;color:#888;display:block">Event Clues</label>
+          <input class="mock-input" value="50th Anniversary" style="width:100%;font-size:0.8rem;padding:0.3rem 0.5rem">
+        </div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:0.8rem">
+        <span style="font-size:0.7rem;color:#888">Vision confidence: 78%</span>
+        <button class="mock-button" style="font-size:0.8rem">💾 Save & Re-match</button>
+      </div>
+    </div>
+
+    <!-- Listing draft section -->
+    <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;color:#888;margin:1rem 0 0.4rem">Section 3 · Listing Draft</div>
+    <div style="border:1px solid #eee;border-radius:6px;padding:0.8rem;background:#fafafa">
+      <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.6rem;padding:0.4rem 0.6rem;background:#e6f0ff;border-radius:4px;font-size:0.75rem;color:#3b6ef0">
+        <span>↻</span> Auto-regenerated from accepted match (Mickey 50th — Cast Member Excl.)
+      </div>
+
+      <div style="font-size:0.8rem">
+        <label style="font-size:0.7rem;color:#888;display:block">Title (max 80)</label>
+        <input class="mock-input" value="Disney Mickey Mouse 50th Anniversary Cast Member Pin LE 1500 2005" style="width:100%;font-size:0.8rem;padding:0.3rem 0.5rem;margin-bottom:0.5rem">
+
+        <label style="font-size:0.7rem;color:#888;display:block">Description</label>
+        <div class="mock-input" style="width:100%;padding:0.4rem 0.5rem;font-size:0.75rem;color:#444;min-height:60px;background:#fff">
+          Authentic Disney Mickey Mouse 50th Anniversary pin, Cast Member exclusive (LE 1500). Released in 2005…
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.6rem;margin-top:0.5rem">
+          <div>
+            <label style="font-size:0.7rem;color:#888;display:block">Suggested $</label>
+            <input class="mock-input" value="24.00" style="width:100%;font-size:0.8rem;padding:0.3rem 0.5rem">
+          </div>
+          <div>
+            <label style="font-size:0.7rem;color:#888;display:block">Quick Sale $</label>
+            <input class="mock-input" value="18.00" style="width:100%;font-size:0.8rem;padding:0.3rem 0.5rem">
+          </div>
+          <div>
+            <label style="font-size:0.7rem;color:#888;display:block">Confidence</label>
+            <div style="font-size:0.8rem;padding:0.35rem 0;color:#666">low (no comps)</div>
+          </div>
+        </div>
+
+        <div style="margin-top:0.5rem">
+          <label style="font-size:0.7rem;color:#888;display:block">Tags</label>
+          <input class="mock-input" value="disney, mickey mouse, 50th anniversary, cast member, limited edition" style="width:100%;font-size:0.8rem;padding:0.3rem 0.5rem">
+        </div>
+      </div>
+
+      <div style="display:flex;justify-content:flex-end;gap:0.4rem;margin-top:0.8rem">
+        <button class="mock-button" style="font-size:0.8rem">↻ Regenerate from match</button>
+        <button class="mock-button" style="font-size:0.8rem">💾 Save draft</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top:1rem">Cascade rule: <strong>edit extraction → "Save & Re-match"</strong> button (explicit because re-match is expensive). <strong>Accept a different catalog match → listing draft auto-regenerates</strong> (cheap, free locally). Manual "Regenerate from match" is there in case you tweak fields and want to start over.</p>

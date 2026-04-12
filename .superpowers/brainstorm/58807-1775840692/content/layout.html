@@ -1,0 +1,89 @@
+<h2>Overall Layout — Two-Pane Workspace</h2>
+<p class="subtitle">Queue list on the left, full pin detail on the right. Click a pin row → detail loads inline.</p>
+
+<div class="mockup">
+  <div class="mockup-header">Review · Batch abc123 · 47 pins · 12 approved</div>
+  <div class="mockup-body" style="padding:0">
+    <div style="display:flex;height:560px;border:1px solid #ddd">
+      <!-- LEFT: Queue list -->
+      <div style="width:38%;border-right:1px solid #ddd;display:flex;flex-direction:column;background:#fafafa">
+        <div style="padding:0.6rem 0.8rem;border-bottom:1px solid #eee;display:flex;gap:0.4rem;align-items:center">
+          <input class="mock-input" placeholder="Filter…" style="flex:1;font-size:0.8rem;padding:0.3rem 0.5rem">
+          <select class="mock-input" style="font-size:0.75rem;padding:0.3rem"><option>Sort: Risk ↓</option></select>
+        </div>
+        <div style="overflow-y:auto;flex:1">
+          <!-- selected row -->
+          <div style="display:flex;gap:0.6rem;padding:0.6rem 0.8rem;background:#e6f0ff;border-left:3px solid #3b6ef0;align-items:center;cursor:pointer">
+            <div style="width:48px;height:48px;background:#ccc;border-radius:4px;flex-shrink:0">📌</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:600;font-size:0.85rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Mickey Mouse 50th Anniversary Pin</div>
+              <div style="font-size:0.7rem;color:#666;display:flex;gap:0.4rem;margin-top:0.2rem">
+                <span style="background:#fff3cd;padding:1px 5px;border-radius:3px">⚠ ambiguous match</span>
+                <span style="color:#888">$24</span>
+              </div>
+            </div>
+          </div>
+          <div style="display:flex;gap:0.6rem;padding:0.6rem 0.8rem;border-top:1px solid #eee;align-items:center;cursor:pointer">
+            <div style="width:48px;height:48px;background:#ccc;border-radius:4px;flex-shrink:0">📌</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:600;font-size:0.85rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Stitch Halloween 2023</div>
+              <div style="font-size:0.7rem;color:#666;display:flex;gap:0.4rem;margin-top:0.2rem">
+                <span style="background:#d4edda;padding:1px 5px;border-radius:3px">✓ ready</span>
+                <span style="color:#888">$18</span>
+              </div>
+            </div>
+          </div>
+          <div style="display:flex;gap:0.6rem;padding:0.6rem 0.8rem;border-top:1px solid #eee;align-items:center;cursor:pointer">
+            <div style="width:48px;height:48px;background:#ccc;border-radius:4px;flex-shrink:0">📌</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:600;font-size:0.85rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">(unknown — vision low confidence)</div>
+              <div style="font-size:0.7rem;color:#666;display:flex;gap:0.4rem;margin-top:0.2rem">
+                <span style="background:#f8d7da;padding:1px 5px;border-radius:3px">✗ no match</span>
+                <span style="color:#888">—</span>
+              </div>
+            </div>
+          </div>
+          <div style="display:flex;gap:0.6rem;padding:0.6rem 0.8rem;border-top:1px solid #eee;align-items:center;cursor:pointer">
+            <div style="width:48px;height:48px;background:#ccc;border-radius:4px;flex-shrink:0">📌</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:600;font-size:0.85rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Tiana Princess & The Frog</div>
+              <div style="font-size:0.7rem;color:#666;display:flex;gap:0.4rem;margin-top:0.2rem">
+                <span style="background:#d4edda;padding:1px 5px;border-radius:3px">✓ ready</span>
+                <span style="color:#888">$32</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- RIGHT: Detail pane -->
+      <div style="flex:1;display:flex;flex-direction:column;overflow-y:auto">
+        <div style="padding:0.8rem 1rem;border-bottom:1px solid #eee;display:flex;justify-content:space-between;align-items:center;background:#fff">
+          <div>
+            <div style="font-weight:600">Pin #142 · Mickey Mouse 50th Anniversary</div>
+            <div style="font-size:0.75rem;color:#666">⚠ ambiguous match · 3 candidates within 0.05</div>
+          </div>
+          <div style="display:flex;gap:0.4rem">
+            <button class="mock-button" style="background:#28a745;color:white;font-size:0.8rem">Approve</button>
+            <button class="mock-button" style="font-size:0.8rem">Skip</button>
+          </div>
+        </div>
+
+        <div style="padding:1rem">
+          <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;color:#888;margin-bottom:0.4rem">Section 1 · Match Review</div>
+          <div style="background:#f8f9fa;border:1px solid #eee;border-radius:6px;padding:0.6rem;color:#888;text-align:center;font-size:0.8rem">[Photo + candidate gallery — see next mockup]</div>
+        </div>
+        <div style="padding:0 1rem 1rem">
+          <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;color:#888;margin-bottom:0.4rem">Section 2 · Vision Extraction</div>
+          <div style="background:#f8f9fa;border:1px solid #eee;border-radius:6px;padding:0.6rem;color:#888;text-align:center;font-size:0.8rem">[Editable extraction fields + re-match button]</div>
+        </div>
+        <div style="padding:0 1rem 1rem">
+          <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;color:#888;margin-bottom:0.4rem">Section 3 · Listing Draft</div>
+          <div style="background:#f8f9fa;border:1px solid #eee;border-radius:6px;padding:0.6rem;color:#888;text-align:center;font-size:0.8rem">[Title, description, price, tags — auto-regenerated when match changes]</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top:1rem">Single page, no nav between pins. Click a row on the left → right pane swaps in. Approve/skip in the header advances to the next risky pin.</p>

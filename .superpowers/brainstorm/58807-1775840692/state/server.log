@@ -1,0 +1,7 @@
+{"type":"server-started","port":56322,"host":"127.0.0.1","url_host":"localhost","url":"http://localhost:56322","screen_dir":"/Users/chris.funaki/Documents/GitHub/Disney-pins/.superpowers/brainstorm/58807-1775840692/content","state_dir":"/Users/chris.funaki/Documents/GitHub/Disney-pins/.superpowers/brainstorm/58807-1775840692/state"}
+{"type":"screen-added","file":"/Users/chris.funaki/Documents/GitHub/Disney-pins/.superpowers/brainstorm/58807-1775840692/content/welcome.html"}
+{"type":"screen-added","file":"/Users/chris.funaki/Documents/GitHub/Disney-pins/.superpowers/brainstorm/58807-1775840692/content/layout.html"}
+{"type":"screen-added","file":"/Users/chris.funaki/Documents/GitHub/Disney-pins/.superpowers/brainstorm/58807-1775840692/content/match-review.html"}
+{"type":"screen-added","file":"/Users/chris.funaki/Documents/GitHub/Disney-pins/.superpowers/brainstorm/58807-1775840692/content/extraction-and-draft.html"}
+{"type":"screen-added","file":"/Users/chris.funaki/Documents/GitHub/Disney-pins/.superpowers/brainstorm/58807-1775840692/content/waiting.html"}
+{"type":"server-stopped","reason":"idle timeout"}

@@ -1,0 +1,3 @@
+{"type":"server-started","port":56575,"host":"127.0.0.1","url_host":"localhost","url":"http://localhost:56575","screen_dir":"/Users/chris.funaki/Documents/GitHub/Disney-pins/.superpowers/brainstorm/90954-1775837024/content","state_dir":"/Users/chris.funaki/Documents/GitHub/Disney-pins/.superpowers/brainstorm/90954-1775837024/state"}
+{"type":"screen-added","file":"/Users/chris.funaki/Documents/GitHub/Disney-pins/.superpowers/brainstorm/90954-1775837024/content/welcome.html"}
+{"type":"server-stopped","reason":"idle timeout"}
