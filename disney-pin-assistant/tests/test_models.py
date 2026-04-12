@@ -17,6 +17,29 @@ from src.models import (
 
 
 @pytest.mark.asyncio
+async def test_pin_no_catalog_match_defaults_false_in_db(db_session):
+    pin = Pin(batch_id="batch-nocat", status=PinStatus.UNPROCESSED, image_paths=[])
+    db_session.add(pin)
+    await db_session.commit()
+    await db_session.refresh(pin)
+    assert pin.no_catalog_match is False
+
+
+@pytest.mark.asyncio
+async def test_pin_no_catalog_match_persists_true(db_session):
+    pin = Pin(
+        batch_id="batch-nocat2",
+        status=PinStatus.UNPROCESSED,
+        image_paths=[],
+        no_catalog_match=True,
+    )
+    db_session.add(pin)
+    await db_session.commit()
+    result = await db_session.execute(select(Pin).where(Pin.id == pin.id))
+    assert result.scalar_one().no_catalog_match is True
+
+
+@pytest.mark.asyncio
 async def test_create_pin(db_session):
     pin = Pin(
         batch_id="batch-001",
