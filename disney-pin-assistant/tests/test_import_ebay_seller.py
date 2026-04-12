@@ -21,6 +21,7 @@ def _mk_args(**overrides):
     defaults = dict(
         seller="pins-n-things",
         batch_name="pnt-test",
+        query="disney",
         max=None,
         skip_processing=True,
         dry_run=False,
@@ -38,7 +39,7 @@ async def test_run_creates_pins_from_seller_listings(db_session, tmp_path, monke
         {"itemId": "v1|2|0", "title": "Maleficent LE 250", "itemWebUrl": "https://ebay.com/2"},
     ]
 
-    async def fake_seller_search(seller, limit, offset):
+    async def fake_seller_search(seller, query="disney", limit=50, offset=0):
         return summaries if offset == 0 else []
 
     async def fake_item_detail(item_id):
@@ -95,7 +96,7 @@ async def test_run_refreshes_parsed_fields_on_duplicate(db_session, tmp_path, mo
     db_session.add(existing)
     await db_session.commit()
 
-    async def fake_seller_search(seller, limit, offset):
+    async def fake_seller_search(seller, query="disney", limit=50, offset=0):
         return [{"itemId": "v1|1|0", "title": "new title", "itemWebUrl": "https://ebay.com/1"}] if offset == 0 else []
 
     async def fake_item_detail(_):
@@ -126,7 +127,7 @@ async def test_run_refreshes_parsed_fields_on_duplicate(db_session, tmp_path, mo
 async def test_run_dry_run_writes_nothing(db_session, tmp_path, monkeypatch):
     monkeypatch.setattr(import_ebay_seller, "UPLOAD_ROOT", tmp_path)
 
-    async def fake_seller_search(seller, limit, offset):
+    async def fake_seller_search(seller, query="disney", limit=50, offset=0):
         return [{"itemId": "v1|1|0", "title": "x", "itemWebUrl": "https://ebay.com/1"}] if offset == 0 else []
 
     with patch.object(import_ebay_seller, "browse_api_seller_search", new=AsyncMock(side_effect=fake_seller_search)), \
