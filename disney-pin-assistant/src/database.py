@@ -60,3 +60,12 @@ async def ensure_listing_collection_tables(engine):
             await conn.run_sync(
                 lambda sync_conn: Base.metadata.tables["ebay_listings"].create(sync_conn, checkfirst=True)
             )
+
+
+async def ensure_comp_weight_column(engine):
+    """Idempotent migration: add `weight` column to `comps` table."""
+    async with engine.begin() as conn:
+        result = await conn.execute(text("PRAGMA table_info(comps)"))
+        existing = {row[1] for row in result.fetchall()}
+        if "weight" not in existing:
+            await conn.execute(text("ALTER TABLE comps ADD COLUMN weight FLOAT"))
