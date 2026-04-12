@@ -2,7 +2,14 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from src.config import settings
-from src.database import engine, ensure_review_ui_columns, ensure_reference_label_columns, ensure_listing_collection_tables
+from src.database import (
+    engine,
+    ensure_review_ui_columns,
+    ensure_reference_label_columns,
+    ensure_listing_collection_tables,
+    ensure_comp_weight_column,
+    ensure_comp_lookup_budget_table,
+)
 from src.models import Base
 from src.routes.upload import router as upload_router
 from src.routes.processing import router as processing_router
@@ -18,6 +25,8 @@ async def lifespan(app: FastAPI):
     await ensure_review_ui_columns(engine)
     await ensure_reference_label_columns(engine)
     await ensure_listing_collection_tables(engine)
+    await ensure_comp_weight_column(engine)
+    await ensure_comp_lookup_budget_table(engine)
     yield
 
 app = FastAPI(title="Disney Pin Assistant", lifespan=lifespan)

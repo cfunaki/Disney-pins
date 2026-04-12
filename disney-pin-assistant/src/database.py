@@ -69,3 +69,16 @@ async def ensure_comp_weight_column(engine):
         existing = {row[1] for row in result.fetchall()}
         if "weight" not in existing:
             await conn.execute(text("ALTER TABLE comps ADD COLUMN weight FLOAT"))
+
+
+async def ensure_comp_lookup_budget_table(engine):
+    """Idempotent migration for the comp_lookup_budget table."""
+    from src.models import Base
+    async with engine.begin() as conn:
+        result = await conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table' AND name='comp_lookup_budget'")
+        )
+        if result.fetchone() is None:
+            await conn.run_sync(
+                lambda sync_conn: Base.metadata.tables["comp_lookup_budget"].create(sync_conn, checkfirst=True)
+            )

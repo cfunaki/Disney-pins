@@ -267,3 +267,10 @@ class EbayListing(Base):
 
     # Relationships
     collection_job = relationship("CollectionJob", back_populates="listings")
+
+
+class CompLookupBudget(Base):
+    __tablename__ = "comp_lookup_budget"
+
+    date = Column(String(20), primary_key=True)  # ISO date (UTC day)
+    calls = Column(Integer, nullable=False, default=0)
