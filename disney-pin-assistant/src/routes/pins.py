@@ -300,6 +300,7 @@ def _pin_to_dict(pin: Pin) -> dict:
             "suggested_price": pin.listing_draft.suggested_price,
             "quick_sale_price": pin.listing_draft.quick_sale_price,
             "price_confidence": pin.listing_draft.price_confidence,
+            "pricing_reasoning": pin.listing_draft.pricing_reasoning,
             "tags_keywords": pin.listing_draft.tags_keywords,
             "export_status": pin.listing_draft.export_status.value,
         }
@@ -309,6 +310,9 @@ def _pin_to_dict(pin: Pin) -> dict:
             "price": comp.price,
             "listing_type": comp.listing_type.value,
             "excluded": comp.excluded,
+            "match_type": comp.match_type.value if comp.match_type else None,
+            "weight": comp.weight,
+            "sale_date": comp.sale_date,
         })
     if pin.reference_source is not None:
         data["reference_source"] = pin.reference_source

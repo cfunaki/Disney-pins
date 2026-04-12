@@ -42,3 +42,43 @@ def test_compute_pricing_high_confidence():
     pricing = compute_pricing(comps)
     assert pricing["price_confidence"] == "high"
     assert pricing["comp_count"] == 8
+
+
+def test_compute_pricing_weighted_when_weights_present():
+    # Recent sale (weight=1.0) at $30 should dominate over old sales at $10.
+    comps = [
+        {"price": 30.0, "listing_type": "sold", "excluded": False, "weight": 1.0},
+        {"price": 10.0, "listing_type": "sold", "excluded": False, "weight": 0.1},
+        {"price": 10.0, "listing_type": "sold", "excluded": False, "weight": 0.1},
+    ]
+    pricing = compute_pricing(comps)
+    # Weighted avg = (30*1.0 + 10*0.1 + 10*0.1) / 1.2 = 32/1.2 = 26.67
+    assert pricing["suggested_price"] == 26.67
+    assert pricing["quick_sale_price"] == 10.0
+    assert pricing["comp_count"] == 3
+    assert "weighted" in pricing["reasoning"].lower()
+
+
+def test_compute_pricing_includes_confidence_band():
+    comps = [{"price": p, "listing_type": "sold", "excluded": False} for p in [10, 15, 20, 25, 30, 35, 40, 45]]
+    pricing = compute_pricing(comps)
+    # P25 = 18.75, P75 = 36.25 (linear interpolation)
+    assert pricing["price_low_band"] == 18.75
+    assert pricing["price_high_band"] == 36.25
+    assert "$18.75" in pricing["reasoning"] and "$36.25" in pricing["reasoning"]
+
+
+def test_compute_pricing_band_none_for_empty():
+    pricing = compute_pricing([])
+    assert pricing["price_low_band"] is None
+    assert pricing["price_high_band"] is None
+
+
+def test_compute_pricing_falls_back_to_median_without_weights():
+    comps = [
+        {"price": 20.0, "listing_type": "sold", "excluded": False},
+        {"price": 25.0, "listing_type": "sold", "excluded": False},
+        {"price": 30.0, "listing_type": "sold", "excluded": False},
+    ]
+    pricing = compute_pricing(comps)
+    assert pricing["suggested_price"] == 25.0  # median, not weighted

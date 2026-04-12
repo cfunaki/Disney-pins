@@ -98,7 +98,20 @@ async def _process_single_pin_inner(session_factory: async_sessionmaker, pin_id:
     async with session_factory() as db:
         pin = await db.get(Pin, pin_id)
         best_match = matches[0] if matches else None
-        pricing = compute_pricing([
+        # Load all persisted comps (including weighted RAPIDAPI_SOLD rows from the hook).
+        db_comps = (await db.execute(
+            select(Comp).where(Comp.pin_id == pin_id)
+        )).scalars().all()
+        comp_dicts = [
+            {
+                "price": c.price,
+                "listing_type": c.listing_type.value if hasattr(c.listing_type, "value") else c.listing_type,
+                "excluded": c.excluded or False,
+                "weight": c.weight or 0,
+            }
+            for c in db_comps
+        ]
+        pricing = compute_pricing(comp_dicts) if comp_dicts else compute_pricing([
             {"price": c["price"], "listing_type": c["listing_type"], "excluded": c.get("excluded", False), "match_type": c.get("match_type", "near")}
             for c in all_comps
         ])
