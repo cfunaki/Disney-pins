@@ -17,3 +17,6 @@ evaluation/comp_relevance.md
 
 # Catalog images (downloaded by scraper)
 catalog_images/
+
+# Listing collection data (raw responses + images)
+data/

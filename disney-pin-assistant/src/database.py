@@ -39,3 +39,24 @@ async def ensure_reference_label_columns(engine):
         for name, sql_type in new_columns.items():
             if name not in existing:
                 await conn.execute(text(f"ALTER TABLE pins ADD COLUMN {name} {sql_type}"))
+
+
+async def ensure_listing_collection_tables(engine):
+    """Idempotent migration for ebay_listings and collection_jobs tables."""
+    from src.models import Base
+    async with engine.begin() as conn:
+        # Check if tables exist; create only if missing
+        result = await conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table' AND name='collection_jobs'")
+        )
+        if result.fetchone() is None:
+            await conn.run_sync(
+                lambda sync_conn: Base.metadata.tables["collection_jobs"].create(sync_conn, checkfirst=True)
+            )
+        result = await conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table' AND name='ebay_listings'")
+        )
+        if result.fetchone() is None:
+            await conn.run_sync(
+                lambda sync_conn: Base.metadata.tables["ebay_listings"].create(sync_conn, checkfirst=True)
+            )
