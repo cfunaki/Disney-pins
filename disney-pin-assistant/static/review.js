@@ -747,6 +747,7 @@ function renderDraftSection(pin) {
   const suggestedPriceVal = escapeHtml(String(d.suggested_price != null ? d.suggested_price : ""));
   const quickSalePriceVal = escapeHtml(String(d.quick_sale_price != null ? `$${d.quick_sale_price.toFixed(2)}` : "—"));
   const priceConfidenceVal = escapeHtml(String(d.price_confidence || "—"));
+  const reasoningVal = escapeHtml(String(d.pricing_reasoning || ""));
   const tagsVal = escapeHtml((d.tags_keywords || []).join(", "));
   return `
     <div class="section-label">Section 3 · Listing Draft</div>
@@ -769,6 +770,7 @@ function renderDraftSection(pin) {
           <span class="readonly-value">${priceConfidenceVal}</span>
         </label>
       </div>
+      ${reasoningVal ? `<div class="pricing-reasoning">💡 ${reasoningVal}</div>` : ""}
       <label>Tags / keywords
         <input type="text" data-draft-field="tags_keywords" value="${tagsVal}">
       </label>
