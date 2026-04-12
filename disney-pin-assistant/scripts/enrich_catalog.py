@@ -94,6 +94,9 @@ def extract_series(title: str) -> str | None:
     Returns:
         The series/collection name, or None if not found.
     """
+    if not title:
+        return None
+
     patterns = [
         r"(.+?(?:Mystery\s+(?:Pin\s+)?)?Collection)\b",
         r"(.+?\bSeries)\b",
@@ -115,10 +118,12 @@ def enrich_entry(entry: dict) -> dict:
         entry: A CatalogEntry-compatible dict.
 
     Returns:
-        The (mutated) entry dict.
+        A new enriched entry dict (does not mutate the original).
     """
-    title = entry.get("canonical_name") or ""
-    description = entry.get("description") or None
+    result = dict(entry)
+
+    title = result.get("canonical_name") or ""
+    description = result.get("description") or None
 
     characters = extract_characters(title, description)
     franchise = infer_franchise(characters) if characters else None
@@ -141,16 +146,16 @@ def enrich_entry(entry: dict) -> dict:
             enrichment_source = "nlp_title"
 
     # Only set fields that are currently absent / falsy.
-    if characters and not entry.get("characters"):
-        entry["characters"] = characters
-    if franchise and not entry.get("franchise"):
-        entry["franchise"] = franchise
-    if series and not entry.get("series_or_collection"):
-        entry["series_or_collection"] = series
+    if characters and not result.get("characters"):
+        result["characters"] = characters
+    if franchise and not result.get("franchise"):
+        result["franchise"] = franchise
+    if series and not result.get("series_or_collection"):
+        result["series_or_collection"] = series
     if enrichment_source:
-        entry["enrichment_source"] = enrichment_source
+        result["enrichment_source"] = enrichment_source
 
-    return entry
+    return result
 
 
 def main():
@@ -196,7 +201,7 @@ def main():
         catalog = json.load(f)
 
     total = len(catalog)
-    enriched_entries = [enrich_entry(dict(entry)) for entry in catalog]
+    enriched_entries = [enrich_entry(entry) for entry in catalog]
 
     char_count = sum(1 for e in enriched_entries if e.get("characters"))
     franchise_count = sum(1 for e in enriched_entries if e.get("franchise"))
@@ -208,11 +213,13 @@ def main():
     print(f"Series rate:     {series_count}/{total} ({100 * series_count // total if total else 0}%)")
 
     if args.sample > 0:
-        sample = random.sample(enriched_entries, min(args.sample, len(enriched_entries)))
-        for entry in sample:
+        enriched_only = [e for e in enriched_entries if e.get("characters") or e.get("series_or_collection")]
+        samples = random.sample(enriched_only, min(args.sample, len(enriched_only)))
+        for entry in samples:
             print(json.dumps(entry, indent=2))
 
     if not args.dry_run:
+        os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
         with open(output_path, "w", encoding="utf-8") as f:
             json.dump(enriched_entries, f, indent=2, ensure_ascii=False)
         print(f"Wrote {total} entries to {output_path}")
