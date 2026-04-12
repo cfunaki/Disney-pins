@@ -166,3 +166,47 @@ async def test_active_seller_archives_raw_response(db_session, tmp_path):
     assert len(json_files) == 1
     data = json.loads(json_files[0].read_text())
     assert isinstance(data, list)
+
+
+@pytest.mark.asyncio
+async def test_active_search_creates_listings(db_session, tmp_path):
+    summaries = [
+        {"itemId": "v1|10|0", "title": "WDI Pin LE 300", "itemWebUrl": "https://ebay.com/10"},
+    ]
+
+    async def fake_search(query, filters=None, limit=50):
+        return summaries
+
+    async def fake_item_detail(item_id):
+        return {
+            "title": "WDI Pin LE 300", "description": None,
+            "image": {"imageUrl": "https://cdn/10.jpg"},
+            "price": {"value": "45.00", "currency": "USD"},
+            "seller": {"username": "some-seller"},
+        }
+
+    async def fake_download(url, dest):
+        Path(dest).parent.mkdir(parents=True, exist_ok=True)
+        Path(dest).write_bytes(b"\xff\xd8")
+        return dest
+
+    with patch.object(collect_listings, "browse_api_search", new=AsyncMock(side_effect=fake_search)), \
+         patch.object(collect_listings, "browse_api_item_detail", new=AsyncMock(side_effect=fake_item_detail)), \
+         patch.object(collect_listings, "_download_image", new=AsyncMock(side_effect=fake_download)), \
+         patch.object(collect_listings, "parse_listing_label", new=AsyncMock(return_value={"characters": ["WDI"]})):
+        result = await collect_listings.run_active_search(
+            query="WDI pin",
+            data_dir=tmp_path,
+            session_factory=lambda: _session_wrapper(db_session),
+            parse_labels=True,
+        )
+
+    assert result["listings_new"] == 1
+
+    jobs = (await db_session.execute(select(CollectionJob))).scalars().all()
+    assert len(jobs) == 1
+    assert jobs[0].job_type == CollectionJobType.KEYWORD_ACTIVE
+
+    listings = (await db_session.execute(select(EbayListing))).scalars().all()
+    assert len(listings) == 1
+    assert listings[0].title == "WDI Pin LE 300"

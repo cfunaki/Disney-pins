@@ -221,6 +221,133 @@ async def run_active_seller(
     return result
 
 
+async def run_active_search(
+    query: str,
+    category: str | None = None,
+    data_dir: Path = Path("data"),
+    session_factory: Callable = _default_session_factory,
+    parse_labels: bool = True,
+) -> dict:
+    """Collect active listings by keyword search."""
+    result = {"listings_found": 0, "listings_new": 0, "listings_updated": 0, "errors": 0}
+
+    # 1. Fetch listings via keyword search
+    filters = f"categoryId:{{{category}}}" if category else None
+    all_summaries: list[dict] = await browse_api_search(
+        query=query, filters=filters, limit=200
+    )
+
+    result["listings_found"] = len(all_summaries)
+
+    async with session_factory() as db:
+        # 2. Create job
+        job = CollectionJob(
+            job_type=CollectionJobType.KEYWORD_ACTIVE,
+            query=query,
+            category_id=category,
+            source="browse_api",
+            status=CollectionJobStatus.RUNNING,
+            started_at=_utcnow_iso(),
+        )
+        db.add(job)
+        await db.commit()
+
+        # 3. Load existing listings for dedup
+        existing_result = await db.execute(
+            select(EbayListing).where(EbayListing.ebay_item_id.isnot(None))
+        )
+        existing_by_id = {l.ebay_item_id: l for l in existing_result.scalars().all()}
+
+        # 4. Process each listing
+        raw_details: list[dict] = []
+        for item_summary in all_summaries:
+            item_id = item_summary.get("itemId")
+            if not item_id:
+                continue
+
+            try:
+                detail = await browse_api_item_detail(item_id)
+            except Exception as exc:
+                print(f"[warn] get_item failed for {item_id}: {exc}", file=sys.stderr)
+                result["errors"] += 1
+                continue
+
+            raw_details.append(detail)
+
+            raw_title = detail.get("title") or item_summary.get("title") or ""
+            raw_description = detail.get("description")
+            listing_url = detail.get("itemWebUrl") or item_summary.get("itemWebUrl")
+            price = _extract_price(detail)
+            seller_name = (detail.get("seller") or {}).get("username")
+            condition = detail.get("condition")
+            image_url = _extract_primary_image_url(detail)
+
+            parsed = None
+            if parse_labels:
+                try:
+                    parsed = await parse_listing_label(raw_title, raw_description)
+                except Exception as exc:
+                    print(f"[warn] label parser failed for {item_id}: {exc}", file=sys.stderr)
+
+            # Upsert
+            existing = existing_by_id.get(item_id)
+            if existing is not None:
+                existing.title = raw_title
+                existing.price = price or existing.price
+                existing.listing_url = listing_url
+                existing.seller = seller_name
+                existing.condition = condition
+                existing.image_url = image_url
+                if parsed is not None:
+                    existing.parsed_fields = parsed
+                existing.updated_at = _utcnow_iso()
+                result["listings_updated"] += 1
+            else:
+                # Download image for new listings
+                local_image = None
+                if image_url:
+                    dest = data_dir / "images" / "active" / _safe_filename(item_id)
+                    try:
+                        await _download_image(image_url, dest)
+                        local_image = str(dest)
+                    except Exception as exc:
+                        print(f"[warn] image download failed for {item_id}: {exc}", file=sys.stderr)
+                        result["errors"] += 1
+
+                listing = EbayListing(
+                    listing_type=EbayListingType.ACTIVE,
+                    source="browse_api",
+                    ebay_item_id=item_id,
+                    title=raw_title,
+                    price=price or 0.0,
+                    seller=seller_name,
+                    condition=condition,
+                    image_url=image_url,
+                    local_image_path=local_image,
+                    listing_url=listing_url,
+                    parsed_fields=parsed,
+                    collection_job_id=job.id,
+                )
+                db.add(listing)
+                existing_by_id[item_id] = listing
+                result["listings_new"] += 1
+
+        # 5. Archive raw response
+        raw_dir = data_dir / "raw" / "browse_api" / datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        raw_dir.mkdir(parents=True, exist_ok=True)
+        raw_path = raw_dir / f"job_{job.id}.json"
+        raw_path.write_text(json.dumps(raw_details, indent=2))
+
+        # 6. Finalize job
+        job.listings_found = result["listings_found"]
+        job.listings_new = result["listings_new"]
+        job.status = CollectionJobStatus.COMPLETED
+        job.completed_at = _utcnow_iso()
+        await db.commit()
+
+    return result
+
+
 # ── CLI ───────────────────────────────────────────────────────────────
 
 
