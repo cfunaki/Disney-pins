@@ -35,3 +35,31 @@ def test_filter_comps_keeps_singles():
     ]
     filtered = filter_comps(comps)
     assert all(not c["excluded"] for c in filtered)
+
+
+def test_match_type_has_rapidapi_sold():
+    from src.models import MatchType
+    assert MatchType.RAPIDAPI_SOLD.value == "rapidapi_sold"
+
+
+from sqlalchemy import select as _select_weight
+
+
+@pytest.mark.asyncio
+async def test_comp_weight_column_round_trip(db_session):
+    from src.models import Comp, MatchType, ListingType, Pin, PinStatus
+    pin = Pin(batch_id="b1", image_paths=[], status=PinStatus.UNPROCESSED)
+    db_session.add(pin)
+    await db_session.flush()
+    comp = Comp(
+        pin_id=pin.id,
+        title="Test pin",
+        price=10.0,
+        listing_type=ListingType.SOLD,
+        match_type=MatchType.RAPIDAPI_SOLD,
+        weight=0.42,
+    )
+    db_session.add(comp)
+    await db_session.commit()
+    loaded = (await db_session.execute(_select_weight(Comp).where(Comp.id == comp.id))).scalar_one()
+    assert loaded.weight == 0.42

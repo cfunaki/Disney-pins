@@ -46,6 +46,7 @@ class ListingType(str, enum.Enum):
 class MatchType(str, enum.Enum):
     EXACT = "exact"
     NEAR = "near"
+    RAPIDAPI_SOLD = "rapidapi_sold"
 
 
 class ExportStatus(str, enum.Enum):
@@ -188,6 +189,7 @@ class Comp(Base):
     listing_type = Column(Enum(ListingType), nullable=False)
     condition = Column(String(50), nullable=True)
     match_type = Column(Enum(MatchType), default=MatchType.NEAR)
+    weight = Column(Float, nullable=True)
     excluded = Column(Boolean, default=False)
     exclusion_reason = Column(String(200), nullable=True)
     raw_data = Column(JSON, nullable=True)
@@ -265,3 +267,10 @@ class EbayListing(Base):
 
     # Relationships
     collection_job = relationship("CollectionJob", back_populates="listings")
+
+
+class CompLookupBudget(Base):
+    __tablename__ = "comp_lookup_budget"
+
+    date = Column(String(20), primary_key=True)  # ISO date (UTC day)
+    calls = Column(Integer, nullable=False, default=0)

@@ -413,3 +413,27 @@ async def test_promote_by_seller(db_session, tmp_path):
     pins = (await db_session.execute(select(Pin).where(Pin.batch_id == "promote-test"))).scalars().all()
     assert len(pins) == 1
     assert pins[0].reference_raw_title == "Pin A"
+
+
+@pytest.mark.asyncio
+async def test_comps_subcommand_invokes_lookup(session_factory, monkeypatch):
+    from src.models import Pin, PinStatus
+
+    async with session_factory() as db:
+        pin = Pin(batch_id="b1", image_paths=[], status=PinStatus.PRICED,
+                  reference_parsed_fields={"characters": ["Mickey"], "franchise": "Disney"})
+        db.add(pin)
+        await db.commit()
+        pin_id = pin.id
+
+    called = {}
+    async def fake_lookup(sf, pid, today=None):
+        called["pid"] = pid
+        from src.pipeline.comp_lookup import LookupResult, LookupStatus
+        return LookupResult(status=LookupStatus.API_CALLED, comps_written=3)
+
+    monkeypatch.setattr(collect_listings, "lookup_comps_for_pin", fake_lookup)
+    monkeypatch.setattr(collect_listings, "_make_session_factory", lambda: session_factory)
+
+    await collect_listings.run_comps(pin_id=pin_id, refresh=False)
+    assert called["pid"] == pin_id
