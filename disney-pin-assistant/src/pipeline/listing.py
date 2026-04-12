@@ -1,4 +1,5 @@
 import statistics
+from src.pipeline.comp_scoring import weighted_price_recommendation
 
 def generate_listing_draft(extraction: dict, catalog_match: dict | None, pricing: dict | None) -> dict:
     title = _build_title(extraction, catalog_match)
@@ -111,8 +112,8 @@ def compute_pricing(comps: list[dict]) -> dict:
     if not valid_comps:
         return {"suggested_price": None, "quick_sale_price": None, "price_confidence": "low", "comp_count": 0, "reasoning": "No valid sold comps found"}
     prices = sorted(c["price"] for c in valid_comps)
-    median_price = round(statistics.median(prices), 2)
     low_price = round(prices[0], 2)
+    high_price = prices[-1]
     comp_count = len(valid_comps)
     if comp_count >= 5:
         confidence = "high"
@@ -120,4 +121,19 @@ def compute_pricing(comps: list[dict]) -> dict:
         confidence = "medium"
     else:
         confidence = "low"
-    return {"suggested_price": median_price, "quick_sale_price": low_price, "price_confidence": confidence, "comp_count": comp_count, "reasoning": f"Based on {comp_count} sold comps. Range: ${low_price}-${prices[-1]:.2f}, Median: ${median_price}"}
+
+    weighted = [c for c in valid_comps if c.get("weight", 0) > 0]
+    if weighted:
+        rec = weighted_price_recommendation(
+            [{"price": c["price"], "weight": c["weight"]} for c in weighted]
+        )
+        suggested = round(rec["suggested_price"], 2) if rec["suggested_price"] is not None else None
+        reasoning = (
+            f"Based on {comp_count} sold comps (weighted by recency/relevance). "
+            f"Range: ${low_price}-${high_price:.2f}, Weighted: ${suggested}"
+        )
+    else:
+        suggested = round(statistics.median(prices), 2)
+        reasoning = f"Based on {comp_count} sold comps. Range: ${low_price}-${high_price:.2f}, Median: ${suggested}"
+
+    return {"suggested_price": suggested, "quick_sale_price": low_price, "price_confidence": confidence, "comp_count": comp_count, "reasoning": reasoning}
