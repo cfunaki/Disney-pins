@@ -109,3 +109,44 @@ def test_hm_abbreviation_pin_type():
     """HM abbreviation maps to 'hidden mickey'."""
     from scraper.pintradingdb_parser import _parse_pin_type_from_h3
     assert _parse_pin_type_from_h3("Released: 05/01/2020 - HM 5 of 9") == "hidden mickey"
+
+
+def test_extracts_description(parsed):
+    """Description text is extracted from the details table."""
+    assert parsed["description"] == (
+        "The Characters & Cameras Mystery Collection features "
+        "Dopey chaser pin."
+    )
+
+
+def test_extracts_sku(parsed):
+    """SKU is extracted from the details table."""
+    assert parsed["sku"] == "400008192705"
+
+
+def test_extracts_retire_date(parsed):
+    """Retire date string is extracted from the details table."""
+    assert parsed["retire_date"] == "06/15/2015"
+
+
+def test_extracts_original_price(parsed):
+    """Original price string is extracted from the details table."""
+    assert parsed["original_price"] == "$19.95 Box of 2"
+
+
+def test_missing_fields_are_none():
+    """Fields missing from the HTML return None."""
+    minimal_html = """
+    <html><body>
+    <div id="sidebar">
+      <h2 class="title">999 - Minimal Pin</h2>
+      <h3>Released: 01/01/2020 - </h3>
+    </div>
+    <table class="pinTable details_table"></table>
+    </body></html>
+    """
+    result = parse_pin_detail(minimal_html, "999")
+    assert result["description"] is None
+    assert result["sku"] is None
+    assert result["retire_date"] is None
+    assert result["original_price"] is None
