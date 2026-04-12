@@ -54,6 +54,24 @@ class ExportStatus(str, enum.Enum):
     EXPORTED = "exported"
 
 
+class EbayListingType(str, enum.Enum):
+    ACTIVE = "active"
+    SOLD = "sold"
+
+
+class CollectionJobType(str, enum.Enum):
+    SELLER_ACTIVE = "seller_active"
+    KEYWORD_ACTIVE = "keyword_active"
+    KEYWORD_SOLD = "keyword_sold"
+
+
+class CollectionJobStatus(str, enum.Enum):
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
 # ── Helper ─────────────────────────────────────────────────────────────
 
 
@@ -200,3 +218,50 @@ class ListingDraft(Base):
 
     # Relationships
     pin = relationship("Pin", back_populates="listing_draft")
+
+
+class CollectionJob(Base):
+    __tablename__ = "collection_jobs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    job_type = Column(Enum(CollectionJobType), nullable=False)
+    query = Column(String(500), nullable=False)
+    category_id = Column(String(50), nullable=True)
+    source = Column(String(50), nullable=False)
+    status = Column(Enum(CollectionJobStatus), nullable=False, default=CollectionJobStatus.PENDING)
+    listings_found = Column(Integer, default=0)
+    listings_new = Column(Integer, default=0)
+    result_metadata = Column(JSON, nullable=True)
+    error_message = Column(Text, nullable=True)
+    started_at = Column(String, nullable=True)
+    completed_at = Column(String, nullable=True)
+    created_at = Column(String, default=lambda: _utcnow().isoformat())
+
+    # Relationships
+    listings = relationship("EbayListing", back_populates="collection_job")
+
+
+class EbayListing(Base):
+    __tablename__ = "ebay_listings"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    listing_type = Column(Enum(EbayListingType), nullable=False)
+    source = Column(String(50), nullable=False)
+    ebay_item_id = Column(String(100), nullable=True, unique=True)
+    title = Column(String(500), nullable=False)
+    price = Column(Float, nullable=False)
+    currency = Column(String(10), default="USD")
+    sale_date = Column(String(20), nullable=True)
+    seller = Column(String(200), nullable=True)
+    category = Column(String(200), nullable=True)
+    condition = Column(String(50), nullable=True)
+    image_url = Column(String(500), nullable=True)
+    local_image_path = Column(String(500), nullable=True)
+    listing_url = Column(String(500), nullable=True)
+    parsed_fields = Column(JSON, nullable=True)
+    collection_job_id = Column(Integer, ForeignKey("collection_jobs.id"), nullable=False)
+    created_at = Column(String, default=lambda: _utcnow().isoformat())
+    updated_at = Column(String, default=lambda: _utcnow().isoformat(), onupdate=lambda: _utcnow().isoformat())
+
+    # Relationships
+    collection_job = relationship("CollectionJob", back_populates="listings")
