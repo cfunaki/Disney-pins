@@ -30,6 +30,8 @@ from src.models import (
     CollectionJobType,
     EbayListing,
     EbayListingType,
+    Pin,
+    PinStatus,
 )
 from src.pipeline.reference_label import parse_listing_label
 from src.services.ebay_client import (
@@ -434,6 +436,63 @@ async def run_sold(
         job.listings_new = result["listings_new"]
         job.status = CollectionJobStatus.COMPLETED
         job.completed_at = _utcnow_iso()
+        await db.commit()
+
+    return result
+
+
+async def run_promote(
+    batch_name: str,
+    job_id: int | None = None,
+    seller: str | None = None,
+    session_factory: Callable = _default_session_factory,
+) -> dict:
+    """Promote collected listings to Pin rows for pipeline processing."""
+    result = {"promoted": 0, "skipped": 0}
+
+    async with session_factory() as db:
+        # Build query based on filter
+        query = select(EbayListing)
+        if job_id is not None:
+            query = query.where(EbayListing.collection_job_id == job_id)
+        elif seller is not None:
+            query = query.where(EbayListing.seller == seller)
+        else:
+            raise ValueError("Must provide either --job-id or --seller")
+
+        listings = (await db.execute(query)).scalars().all()
+
+        # Load existing pins for dedup
+        existing_pins = await db.execute(
+            select(Pin.reference_external_id).where(
+                Pin.reference_external_id.isnot(None)
+            )
+        )
+        existing_ext_ids: set[str] = {row[0] for row in existing_pins.fetchall()}
+
+        for listing in listings:
+            # Skip if already promoted (by ebay_item_id)
+            if listing.ebay_item_id and listing.ebay_item_id in existing_ext_ids:
+                result["skipped"] += 1
+                continue
+
+            image_paths = [listing.local_image_path] if listing.local_image_path else []
+            pin = Pin(
+                batch_id=batch_name,
+                status=PinStatus.UNPROCESSED,
+                image_paths=image_paths,
+                reference_source=listing.source,
+                reference_external_id=listing.ebay_item_id,
+                reference_url=listing.listing_url,
+                reference_raw_title=listing.title,
+                reference_parsed_fields=listing.parsed_fields,
+                reference_ingested_at=_utcnow_iso(),
+            )
+            db.add(pin)
+            if listing.ebay_item_id:
+                existing_ext_ids.add(listing.ebay_item_id)
+            result["promoted"] += 1
+
         await db.commit()
 
     return result

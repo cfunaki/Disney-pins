@@ -292,3 +292,124 @@ async def test_sold_deduplicates_on_title_price_date(db_session, tmp_path):
 
     listings = (await db_session.execute(select(EbayListing))).scalars().all()
     assert len(listings) == 2  # 1 existing + 1 new
+
+
+from src.models import Pin, PinStatus
+
+
+@pytest.mark.asyncio
+async def test_promote_creates_pins_from_listings(db_session, tmp_path):
+    job = CollectionJob(
+        job_type=CollectionJobType.SELLER_ACTIVE, query="test", source="browse_api",
+        status=CollectionJobStatus.COMPLETED,
+    )
+    db_session.add(job)
+    await db_session.commit()
+
+    listing1 = EbayListing(
+        listing_type=EbayListingType.ACTIVE, source="browse_api",
+        ebay_item_id="v1|1|0", title="Stitch Pin",
+        price=19.99, seller="pins-n-things",
+        local_image_path=str(tmp_path / "img1.jpg"),
+        listing_url="https://ebay.com/1",
+        parsed_fields={"characters": ["Stitch"]},
+        collection_job_id=job.id,
+    )
+    listing2 = EbayListing(
+        listing_type=EbayListingType.ACTIVE, source="browse_api",
+        ebay_item_id="v1|2|0", title="Goofy Pin",
+        price=14.99, seller="pins-n-things",
+        local_image_path=str(tmp_path / "img2.jpg"),
+        listing_url="https://ebay.com/2",
+        parsed_fields={"characters": ["Goofy"]},
+        collection_job_id=job.id,
+    )
+    db_session.add_all([listing1, listing2])
+    await db_session.commit()
+
+    result = await collect_listings.run_promote(
+        job_id=job.id,
+        batch_name="test-batch",
+        session_factory=lambda: _session_wrapper(db_session),
+    )
+
+    assert result["promoted"] == 2
+    assert result["skipped"] == 0
+
+    pins = (await db_session.execute(select(Pin).where(Pin.batch_id == "test-batch"))).scalars().all()
+    assert len(pins) == 2
+    for pin in pins:
+        assert pin.status == PinStatus.UNPROCESSED
+        assert pin.reference_source == "browse_api"
+        assert pin.reference_external_id in {"v1|1|0", "v1|2|0"}
+
+
+@pytest.mark.asyncio
+async def test_promote_skips_already_promoted(db_session, tmp_path):
+    job = CollectionJob(
+        job_type=CollectionJobType.SELLER_ACTIVE, query="test", source="browse_api",
+        status=CollectionJobStatus.COMPLETED,
+    )
+    db_session.add(job)
+    await db_session.commit()
+
+    listing = EbayListing(
+        listing_type=EbayListingType.ACTIVE, source="browse_api",
+        ebay_item_id="v1|1|0", title="Stitch Pin",
+        price=19.99, collection_job_id=job.id,
+    )
+    db_session.add(listing)
+    await db_session.commit()
+
+    # Pre-create a pin with the same external ID
+    pin = Pin(
+        batch_id="old-batch", status=PinStatus.PRICED, image_paths=[],
+        reference_source="ebay_browse", reference_external_id="v1|1|0",
+    )
+    db_session.add(pin)
+    await db_session.commit()
+
+    result = await collect_listings.run_promote(
+        job_id=job.id,
+        batch_name="new-batch",
+        session_factory=lambda: _session_wrapper(db_session),
+    )
+
+    assert result["promoted"] == 0
+    assert result["skipped"] == 1
+
+
+@pytest.mark.asyncio
+async def test_promote_by_seller(db_session, tmp_path):
+    job = CollectionJob(
+        job_type=CollectionJobType.SELLER_ACTIVE, query="test", source="browse_api",
+        status=CollectionJobStatus.COMPLETED,
+    )
+    db_session.add(job)
+    await db_session.commit()
+
+    listing1 = EbayListing(
+        listing_type=EbayListingType.ACTIVE, source="browse_api",
+        ebay_item_id="v1|1|0", title="Pin A", price=10.00,
+        seller="target-seller", collection_job_id=job.id,
+    )
+    listing2 = EbayListing(
+        listing_type=EbayListingType.ACTIVE, source="browse_api",
+        ebay_item_id="v1|2|0", title="Pin B", price=20.00,
+        seller="other-seller", collection_job_id=job.id,
+    )
+    db_session.add_all([listing1, listing2])
+    await db_session.commit()
+
+    result = await collect_listings.run_promote(
+        seller="target-seller",
+        batch_name="promote-test",
+        session_factory=lambda: _session_wrapper(db_session),
+    )
+
+    assert result["promoted"] == 1
+    assert result["skipped"] == 0
+
+    pins = (await db_session.execute(select(Pin).where(Pin.batch_id == "promote-test"))).scalars().all()
+    assert len(pins) == 1
+    assert pins[0].reference_raw_title == "Pin A"
