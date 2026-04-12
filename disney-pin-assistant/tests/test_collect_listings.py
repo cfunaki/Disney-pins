@@ -210,3 +210,85 @@ async def test_active_search_creates_listings(db_session, tmp_path):
     listings = (await db_session.execute(select(EbayListing))).scalars().all()
     assert len(listings) == 1
     assert listings[0].title == "WDI Pin LE 300"
+
+
+@pytest.mark.asyncio
+async def test_sold_creates_listings_from_rapidapi(db_session, tmp_path):
+    api_result = {
+        "aggregates": {
+            "average_price": 22.50, "median_price": 20.00,
+            "min_price": 10.00, "max_price": 35.00, "results": 2,
+        },
+        "products": [
+            {"title": "Stitch LE 500 Pin", "sale_price": "25.00", "date_sold": "Mar 10, 2026", "link": "https://ebay.com/sold/1"},
+            {"title": "Stitch Pin Lot", "sale_price": "20.00", "date_sold": "Mar 08, 2026", "link": "https://ebay.com/sold/2"},
+        ],
+    }
+
+    with patch.object(collect_listings, "fetch_sold_listings", new=AsyncMock(return_value=api_result)), \
+         patch.object(collect_listings, "parse_listing_label", new=AsyncMock(return_value={"characters": ["Stitch"]})):
+        result = await collect_listings.run_sold(
+            query="Stitch LE 500",
+            data_dir=tmp_path,
+            session_factory=lambda: _session_wrapper(db_session),
+            parse_labels=True,
+        )
+
+    assert result["listings_new"] == 2
+    assert result["listings_skipped"] == 0
+
+    jobs = (await db_session.execute(select(CollectionJob))).scalars().all()
+    assert len(jobs) == 1
+    assert jobs[0].job_type == CollectionJobType.KEYWORD_SOLD
+    assert jobs[0].result_metadata["average_price"] == 22.50
+
+    listings = (await db_session.execute(select(EbayListing))).scalars().all()
+    assert len(listings) == 2
+    for listing in listings:
+        assert listing.listing_type == EbayListingType.SOLD
+        assert listing.source == "rapidapi_sold"
+        assert listing.local_image_path is None  # no image download for sold
+
+
+@pytest.mark.asyncio
+async def test_sold_deduplicates_on_title_price_date(db_session, tmp_path):
+    # Pre-create a sold listing
+    job = CollectionJob(
+        job_type=CollectionJobType.KEYWORD_SOLD, query="test", source="rapidapi_sold",
+        status=CollectionJobStatus.COMPLETED,
+    )
+    db_session.add(job)
+    await db_session.commit()
+
+    existing = EbayListing(
+        listing_type=EbayListingType.SOLD,
+        source="rapidapi_sold",
+        title="Stitch LE 500 Pin",
+        price=25.00,
+        sale_date="Mar 10, 2026",
+        collection_job_id=job.id,
+    )
+    db_session.add(existing)
+    await db_session.commit()
+
+    api_result = {
+        "aggregates": {"average_price": 25.00, "median_price": 25.00, "min_price": 25.00, "max_price": 25.00, "results": 2},
+        "products": [
+            {"title": "Stitch LE 500 Pin", "sale_price": "25.00", "date_sold": "Mar 10, 2026", "link": "https://ebay.com/1"},
+            {"title": "New Pin", "sale_price": "30.00", "date_sold": "Mar 11, 2026", "link": "https://ebay.com/2"},
+        ],
+    }
+
+    with patch.object(collect_listings, "fetch_sold_listings", new=AsyncMock(return_value=api_result)), \
+         patch.object(collect_listings, "parse_listing_label", new=AsyncMock(return_value={})):
+        result = await collect_listings.run_sold(
+            query="Stitch", data_dir=tmp_path,
+            session_factory=lambda: _session_wrapper(db_session),
+            parse_labels=False,
+        )
+
+    assert result["listings_new"] == 1
+    assert result["listings_skipped"] == 1
+
+    listings = (await db_session.execute(select(EbayListing))).scalars().all()
+    assert len(listings) == 2  # 1 existing + 1 new

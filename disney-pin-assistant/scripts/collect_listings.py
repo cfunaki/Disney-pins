@@ -37,6 +37,7 @@ from src.services.ebay_client import (
     browse_api_search,
     browse_api_seller_search,
 )
+from src.services.rapidapi_client import fetch_sold_listings
 
 PAGE_SIZE: int = 200
 _SAFE_FILENAME = re.compile(r"[^A-Za-z0-9._-]+")
@@ -339,6 +340,96 @@ async def run_active_search(
         raw_path.write_text(json.dumps(raw_details, indent=2))
 
         # 6. Finalize job
+        job.listings_found = result["listings_found"]
+        job.listings_new = result["listings_new"]
+        job.status = CollectionJobStatus.COMPLETED
+        job.completed_at = _utcnow_iso()
+        await db.commit()
+
+    return result
+
+
+async def run_sold(
+    query: str,
+    max_results: int = 240,
+    category: str | None = None,
+    data_dir: Path = Path("data"),
+    session_factory: Callable = _default_session_factory,
+    parse_labels: bool = True,
+) -> dict:
+    """Collect sold listings via RapidAPI."""
+    result = {"listings_found": 0, "listings_new": 0, "listings_skipped": 0, "errors": 0}
+
+    api_result = await fetch_sold_listings(
+        keywords=query, max_results=max_results, category_id=category,
+    )
+
+    products = api_result["products"]
+    result["listings_found"] = len(products)
+
+    async with session_factory() as db:
+        job = CollectionJob(
+            job_type=CollectionJobType.KEYWORD_SOLD,
+            query=query,
+            category_id=category,
+            source="rapidapi_sold",
+            status=CollectionJobStatus.RUNNING,
+            started_at=_utcnow_iso(),
+            result_metadata=api_result["aggregates"],
+        )
+        db.add(job)
+        await db.commit()
+
+        # Load existing sold listings for soft dedup
+        existing_sold = await db.execute(
+            select(EbayListing).where(EbayListing.listing_type == EbayListingType.SOLD)
+        )
+        dedup_set: set[tuple[str, float, str]] = set()
+        for row in existing_sold.scalars().all():
+            dedup_set.add((row.title, row.price, row.sale_date or ""))
+
+        for product in products:
+            title = product.get("title", "")
+            sale_price_str = product.get("sale_price", "0")
+            try:
+                sale_price = float(sale_price_str)
+            except (ValueError, TypeError):
+                sale_price = 0.0
+            date_sold = product.get("date_sold", "")
+            link = product.get("link")
+
+            dedup_key = (title, sale_price, date_sold)
+            if dedup_key in dedup_set:
+                result["listings_skipped"] += 1
+                continue
+
+            parsed = None
+            if parse_labels:
+                try:
+                    parsed = await parse_listing_label(title, None)
+                except Exception as exc:
+                    print(f"[warn] label parser failed: {exc}", file=sys.stderr)
+                    result["errors"] += 1
+
+            listing = EbayListing(
+                listing_type=EbayListingType.SOLD,
+                source="rapidapi_sold",
+                title=title,
+                price=sale_price,
+                sale_date=date_sold,
+                listing_url=link,
+                parsed_fields=parsed,
+                collection_job_id=job.id,
+            )
+            db.add(listing)
+            dedup_set.add(dedup_key)
+            result["listings_new"] += 1
+
+        # Archive raw response
+        raw_dir = data_dir / "raw" / "rapidapi_sold" / datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        raw_dir.mkdir(parents=True, exist_ok=True)
+        (raw_dir / f"job_{job.id}.json").write_text(json.dumps(api_result, indent=2))
+
         job.listings_found = result["listings_found"]
         job.listings_new = result["listings_new"]
         job.status = CollectionJobStatus.COMPLETED
