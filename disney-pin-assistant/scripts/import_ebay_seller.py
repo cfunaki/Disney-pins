@@ -100,7 +100,7 @@ async def run(
     offset = 0
     while True:
         page = await browse_api_seller_search(
-            seller=args.seller, limit=PAGE_SIZE, offset=offset,
+            seller=args.seller, query=args.query, limit=PAGE_SIZE, offset=offset,
         )
         if not page:
             break
@@ -224,6 +224,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Cap on listings to ingest (default: unlimited)")
     parser.add_argument("--skip-processing", action="store_true",
                         help="Do not enqueue vision/match pipeline after ingest")
+    parser.add_argument("--query", default="disney",
+                        help="Browse API search query (default: 'disney')")
     parser.add_argument("--dry-run", action="store_true",
                         help="Hit the API, parse labels, print what would be created, write nothing")
     return parser
