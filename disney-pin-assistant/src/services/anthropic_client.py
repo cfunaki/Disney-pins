@@ -19,7 +19,7 @@ async def send_vision_request(image_paths: list[str], prompt: str) -> str:
         })
     content.append({"type": "text", "text": prompt})
     response = await client.messages.create(
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-4-5",
         max_tokens=1024,
         messages=[{"role": "user", "content": content}],
     )

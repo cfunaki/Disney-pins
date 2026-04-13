@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     comp_min_parsed_fields: int = 2
     comp_cache_min_hits: int = 5
     comp_max_results_per_lookup: int = 60  # RapidAPI only accepts 60/120/240
+    ebay_disney_pins_category_id: str = "183454"  # eBay category: Disney Pins
 
     model_config = {"env_file": ".env"}
 

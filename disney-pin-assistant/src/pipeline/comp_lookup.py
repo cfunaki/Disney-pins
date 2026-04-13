@@ -74,6 +74,7 @@ def _build_query(parsed: dict) -> str:
     yr = parsed.get("release_year")
     if yr is not None:
         parts.append(str(yr))
+    parts.append("pin")
     return " ".join(parts).strip()
 
 
@@ -160,7 +161,9 @@ async def lookup_comps_for_pin(
 
     try:
         response = await sold_data_client.fetch_sold_listings(
-            query, max_results=settings.comp_max_results_per_lookup,
+            query,
+            max_results=settings.comp_max_results_per_lookup,
+            category_id=settings.ebay_disney_pins_category_id,
         )
     except Exception as exc:
         async with session_factory() as db:
